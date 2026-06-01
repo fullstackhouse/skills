@@ -1,0 +1,11 @@
+{
+  "name": "fullstackhouse-skills",
+  "description": "FullstackHouse internal Claude Code skills (Open Mercato bootstrap, conventions, infra)",
+  "version": "0.1.0",
+  "author": {
+    "name": "FullstackHouse",
+    "url": "https://fullstack.house"
+  },
+  "homepage": "https://github.com/fullstackhouse/skills",
+  "license": "UNLICENSED"
+}

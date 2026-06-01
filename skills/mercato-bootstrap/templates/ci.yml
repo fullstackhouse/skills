@@ -1,0 +1,67 @@
+# FSH Open Mercato baseline CI — PR gate. Target-agnostic (no deploy).
+# Drop into .github/workflows/ci.yml at the monorepo root.
+# Assumes a thin root delegating to apps/mercato; Postgres service matches apps/mercato/.env.example defaults.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mercato
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17-trixie
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: open-mercato
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Enable corepack
+        run: corepack enable
+        working-directory: .
+      - name: Install
+        run: yarn install --immutable
+      - name: Prepare env
+        run: cp .env.example .env
+      - name: Generate
+        run: yarn generate
+      - name: Migrate
+        run: yarn db:migrate
+      - name: Lint
+        run: yarn lint
+      - name: Typecheck
+        run: yarn typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - name: Test
+        run: yarn test
+      - name: Build
+        run: yarn build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+    # Redis/Meilisearch are NOT needed for lint/typecheck/unit tests (queue defaults to
+    # filesystem, search defaults to Postgres). Add them as services here if/when
+    # integration tests require them.
