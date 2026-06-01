@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "fullstackhouse-skills",
+  "description": "FullstackHouse internal Claude Code skills (Open Mercato bootstrap, conventions, infra)",
+  "owner": {
+    "name": "FullstackHouse",
+    "url": "https://fullstack.house"
+  },
+  "plugins": [
+    {
+      "name": "fsh",
+      "source": "./"
+    }
+  ]
+}
