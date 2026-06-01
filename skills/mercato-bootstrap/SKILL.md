@@ -1,6 +1,6 @@
 ---
 name: mercato-bootstrap
-description: Bootstrap an Open Mercato application into a monorepo following FullstackHouse conventions — scaffold via create-mercato-app, allocate non-clashing local infra ports, bring up Postgres/pgvector + Redis + Meilisearch, run the generate/migrate/initialize sequence, verify the dev server boots, and drop in conductor + CI (and optionally OpenTofu infra). Use when setting up a new Open Mercato app, adding apps/mercato to a repo, or standing up an Open Mercato dev environment.
+description: Bootstrap an Open Mercato application into a monorepo following FullstackHouse conventions — scaffold via create-mercato-app, allocate non-clashing local infra ports, bring up Postgres/pgvector + Redis + Meilisearch, run the generate/migrate/initialize sequence, verify the dev server boots, and drop in conductor + CI (Slack-on-failure, preview environments, and OpenTofu infra patterns). Use when setting up a new Open Mercato app, adding apps/mercato to a repo, or standing up an Open Mercato dev environment.
 ---
 
 # Bootstrap Open Mercato (FSH conventions)
@@ -89,18 +89,28 @@ For `classic`: remove the `example` and `example_customers_sync` entries from
 migrations already ran, the cleanest dev reset is to recreate the DB:
 `docker compose down -v && docker compose up -d` then redo step 5 (migrate + initialize).
 
-### 8. CI (and optionally infra) — target-agnostic first
+### 8. CI / CD — add the target-agnostic parts now, defer the rest
+**Now (no hosting decision needed):**
 - Add `templates/ci.yml` → `.github/workflows/ci.yml` (Node 24 + corepack →
   install/generate/db:migrate/lint/typecheck/test/build against a pgvector Postgres service).
-  This is safe to add immediately; no hosting decision required.
-- **Deploy + infra** depend on the hosting target. FSH precedent:
-  - GCP Cloud Run + Cloud SQL + Memorystore (covo, edube) — simplest, recommended default.
-  - Hetzner k3s + CloudNativePG (tournee) — heavier, uses `tofu`/OpenTofu.
-  - Universal infra conventions: **OpenTofu** (`tofu`, not `terraform`), GCS state backend,
-    `infra/` at repo root with `bootstrap/` + `_common/modules/` + `dev/` (+ `prod/` later),
-    GCP Secret Manager, GitHub OIDC / Workload Identity (no long-lived keys).
-  Defer until the user picks a target, then port the modules from covo/edube (GCP) or
-  tournee (Hetzner).
+  It already includes the FSH **Slack-on-failure** job (push-to-main) — set org/repo secret
+  `FSH_SLACK_BOT_TOKEN` (or delete that job). See Slack pattern in `references/ci-cd.md`.
+- Optionally install `templates/notify-slack-on-failure.action.yml` →
+  `.github/actions/notify-slack-on-failure/action.yml` (reusable composite — preferred over
+  copy-pasting the slack step across deploy/cleanup workflows).
+
+**After the hosting target is chosen — full CD (deploy + preview environments):**
+See **`references/ci-cd.md`** for the complete, ported-from-edube pattern:
+- Reusable `deploy.yml` (build→migrate→deploy→healthcheck) + `deploy-prod.yml`/`deploy-dev.yml`.
+- **Preview environments**: per-PR service `{app}-pr-{N}` + isolated DB `mercato_pr_{N}`
+  (URL-rewrite trick), PR-comment with the URL, `deploy-preview.yml` (create) /
+  `delete-preview.yml` (PR-close teardown, race-protected) / `cleanup-previews.yml` (nightly
+  sweep) / `scale-down-previews.yml` (idle → min-instances=0).
+- **Infra conventions** (universal): **OpenTofu** (`tofu`, not `terraform`), GCS state backend,
+  `infra/` at repo root = `bootstrap/` + `_common/modules/` + `dev/` (+ `prod/` later),
+  GCP Secret Manager (`{prefix}-{name}`), GitHub OIDC / Workload Identity (no long-lived keys).
+- Targets: GCP Cloud Run + Cloud SQL + Memorystore (covo, edube — recommended default) vs
+  Hetzner k3s + CloudNativePG (tournee). Port modules from the matching repo.
 
 ### 9. Commit
 Commit `apps/mercato/` (incl. `yarn.lock`) + root `conductor.json`/`package.json` + CI.

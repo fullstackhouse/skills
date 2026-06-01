@@ -65,3 +65,18 @@ jobs:
     # Redis/Meilisearch are NOT needed for lint/typecheck/unit tests (queue defaults to
     # filesystem, search defaults to Postgres). Add them as services here if/when
     # integration tests require them.
+
+  # Slack alert when main breaks (FSH convention). Fires only on push-to-main failure.
+  # Requires org/repo secret FSH_SLACK_BOT_TOKEN. Delete this job if you don't use Slack.
+  notify-failure:
+    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: fullstackhouse/slack-notify-action@v1
+        with:
+          bot-token: ${{ secrets.FSH_SLACK_BOT_TOKEN }}
+          channel: "#fsh-alerts"
+          title: "CI failed on main"
+          message: "Tests failed on `main` after merge. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          status: failure

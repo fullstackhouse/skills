@@ -1,0 +1,48 @@
+# FSH reusable "Slack on failure" composite action.
+# Destination: .github/actions/notify-slack-on-failure/action.yml
+# Centralizes the slack-notify step so deploy/cleanup/preview workflows don't duplicate it.
+#
+# Usage in a workflow:
+#   notify-failure:
+#     if: failure()
+#     needs: [deploy]
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4   # needed to resolve the local composite action
+#       - uses: ./.github/actions/notify-slack-on-failure
+#         with:
+#           title: "Prod deployment failed"
+#           message: "Deploy failed. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+#           slack-bot-token: ${{ secrets.FSH_SLACK_BOT_TOKEN }}
+name: Notify Slack on failure
+description: Post a Slack alert (FSH slack-notify-action) when a job fails. Bot-token or webhook mode.
+
+inputs:
+  title:
+    required: true
+    description: Notification title
+  message:
+    required: true
+    description: Notification body (supports markdown)
+  channel:
+    required: false
+    default: "#fsh-alerts"
+    description: Target channel (bot-token mode)
+  slack-bot-token:
+    required: false
+    description: Slack bot user token (xoxb-…). Provide this OR slack-webhook-url.
+  slack-webhook-url:
+    required: false
+    description: Slack incoming webhook URL. Provide this OR slack-bot-token.
+
+runs:
+  using: composite
+  steps:
+    - uses: fullstackhouse/slack-notify-action@v1
+      with:
+        bot-token: ${{ inputs.slack-bot-token }}
+        webhook-url: ${{ inputs.slack-webhook-url }}
+        channel: ${{ inputs.channel }}
+        title: ${{ inputs.title }}
+        message: ${{ inputs.message }}
+        status: failure
