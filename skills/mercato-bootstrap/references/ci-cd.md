@@ -55,7 +55,7 @@ image    = pr-{N}-{sha}
    ```
    Run migrations as a **Cloud Run Job** with `yarn db:migrate:preview` (clones then migrates).
 3. Optional setup job: reset `superadmin@acme.com` password for manual testing.
-4. Deploy service: `APP_ENV=preview`, `QUEUE_STRATEGY=local`, `CACHE_STRATEGY=memory`,
+4. Deploy service: `DEMO_MODE=false` (banner defaults on), `APP_ENV=preview`, `QUEUE_STRATEGY=local`, `CACHE_STRATEGY=memory`,
    `min-instances=0` (cost), attachments via GCS volume mount.
 5. Health check → **comment the URL on the PR** (update the existing bot comment) + create a
    GitHub Deployment with `transient-environment: true`.

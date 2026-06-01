@@ -124,6 +124,8 @@ Confirm `.env`, `node_modules`, `.mercato/generated` are gitignored. Conventiona
 | `db:migrate` hangs/errors on connect | Postgres not healthy yet, or `.env` port ≠ compose port. |
 | `mercato agentic …` "Module not found" | Expected — agentic setup is create-time only, not a runtime CLI command. |
 | Orphan `example_*` tables after classic cleanup | Recreate the dev DB (`docker compose down -v`) — see step 7. |
+| "Demo environment" banner on a **deployed** env | `DEMO_MODE` defaults ON unless explicitly `"false"`. `.env.example` sets it false (local is clean), but `gcloud run deploy --set-env-vars` replaces env — add `DEMO_MODE=false` to the deploy command (and the tofu service env). |
+| `yarn lint` fails: `next lint` "Invalid project directory" or eslint-plugin-react `getFilename is not a function` | Empty preset ships `lint = next lint` (removed in Next 16) and mis-pins `eslint ^10` (incompatible with eslint-config-next 16's react plugin). Fix: set `eslint ^9`, add a flat `eslint.config.mjs` importing `eslint-config-next/core-web-vitals` + `/typescript`, set `lint = eslint .`; downgrade the newer react-hooks/TS rules the vendored scaffold trips to `warn`. |
 
 ## Reference repos (FSH)
 - `edube` — thin app-only monorepo (this pattern). `tournee` — polyglot + Hetzner k3s.
