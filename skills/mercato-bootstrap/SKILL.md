@@ -82,14 +82,33 @@ bash scripts/verify.sh               # asserts / = 200 and /backend = 200/redire
 Log in at `/backend` with the seeded `admin@acme.com` / `secret`. First dev compile is
 RAM-heavy (~10–14 GB) and slow — normal. Stop the server after verifying.
 
-### 7. Strip example modules (only if preset = `classic`)
+### 7. Brand the app  ← rename the display title to the client's brand
+The scaffold ships **"Open Mercato"** as the app's display/document title. Rebrand it to the
+engagement's brand (ask the user for `{{APP_BRAND}}`, e.g. `Groomershop`, `Edube`, `FSH Mercato`).
+
+**Critical: brand ≠ package.** Change only the *display/document title*; never touch the
+framework's package identity or install references — a blind find-and-replace of "Open Mercato"
+breaks npm packages and install links.
+
+- **Rebrand** these (locate them — scaffold versions drift; these are the known touchpoints):
+  - i18n (each locale in `src/i18n/*.json`): `app.metadata.title`, `app.page.title`,
+    `app.page.logoAlt`, `appShell.productName`; brand-swap inside `app.title`, `api.docs.title`.
+  - Hardcoded fallbacks: `src/app/layout.tsx`, `src/lib/metadata.ts`,
+    `src/app/(backend)/backend/layout.tsx`, `src/app/api/docs/{openapi,markdown}/route.ts`.
+- **Leave intact** (these name the OSS framework, not the brand):
+  - `@open-mercato/*` npm packages, the package/dir name, and any `npm install` references.
+  - Demo/onboarding copy that links to the framework: `startPage.*`, `notices.demo.installLink`.
+- Re-validate each edited locale JSON. Confirm `grep -ri "open mercato"` only matches the
+  intentional framework/install references above.
+
+### 8. Strip example modules (only if preset = `classic`)
 Prod FSH apps ship **none**. `empty` already has none — skip this step.
 For `classic`: remove the `example` and `example_customers_sync` entries from
 `src/modules.ts`, `rm -rf src/modules/example*`, then `yarn generate`. Because the example
 migrations already ran, the cleanest dev reset is to recreate the DB:
 `docker compose down -v && docker compose up -d` then redo step 5 (migrate + initialize).
 
-### 8. CI / CD — add the target-agnostic parts now, defer the rest
+### 9. CI / CD — add the target-agnostic parts now, defer the rest
 **Now (no hosting decision needed):**
 - Add `templates/ci.yml` → `.github/workflows/ci.yml` (Node 24 + corepack →
   install/generate/db:migrate/lint/typecheck/test/build against a pgvector Postgres service).
@@ -112,7 +131,7 @@ See **`references/ci-cd.md`** for the complete, ported-from-edube pattern:
 - Targets: GCP Cloud Run + Cloud SQL + Memorystore (covo, edube — recommended default) vs
   Hetzner k3s + CloudNativePG (tournee). Port modules from the matching repo.
 
-### 9. Commit
+### 10. Commit
 Commit `apps/mercato/` (incl. `yarn.lock`) + root `conductor.json`/`package.json` + CI.
 Confirm `.env`, `node_modules`, `.mercato/generated` are gitignored. Conventional Commits.
 
@@ -123,7 +142,7 @@ Confirm `.env`, `node_modules`, `.mercato/generated` are gitignored. Conventiona
 | `yarn` runs 1.x / wrong version | Use `corepack yarn …`; run `corepack enable` once. |
 | `db:migrate` hangs/errors on connect | Postgres not healthy yet, or `.env` port ≠ compose port. |
 | `mercato agentic …` "Module not found" | Expected — agentic setup is create-time only, not a runtime CLI command. |
-| Orphan `example_*` tables after classic cleanup | Recreate the dev DB (`docker compose down -v`) — see step 7. |
+| Orphan `example_*` tables after classic cleanup | Recreate the dev DB (`docker compose down -v`) — see step 8. |
 | "Demo environment" banner on a **deployed** env | `DEMO_MODE` defaults ON unless explicitly `"false"`. `.env.example` sets it false (local is clean), but `gcloud run deploy --set-env-vars` replaces env — add `DEMO_MODE=false` to the deploy command (and the tofu service env). |
 | `yarn lint` fails: `next lint` "Invalid project directory" or eslint-plugin-react `getFilename is not a function` | Empty preset ships `lint = next lint` (removed in Next 16) and mis-pins `eslint ^10` (incompatible with eslint-config-next 16's react plugin). Fix: set `eslint ^9`, add a flat `eslint.config.mjs` importing `eslint-config-next/core-web-vitals` + `/typescript`, set `lint = eslint .`; downgrade the newer react-hooks/TS rules the vendored scaffold trips to `warn`. |
 
