@@ -73,7 +73,7 @@ Structure (adapt emoji/headers to the channel's existing style if prior statuses
 • <blocker — what's needed, from whom>
 ```
 
-Omit empty sections except Blockers — if there are none, say so explicitly ("No blockers."); silence reads as "didn't check".
+Omit empty sections, including Blockers — drop the section entirely when there's nothing to report.
 
 **Continuity** (the credibility test): every item the *previous* status listed under "up next" must appear in this draft — as shipped, in progress, or explicitly slipped with a reason. Never let promised work silently vanish.
 
