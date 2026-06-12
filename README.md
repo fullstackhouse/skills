@@ -11,8 +11,9 @@ Private collection of FullstackHouse Claude Code skills.
 | [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
+| [`project-status`](./skills/project-status/SKILL.md) | Draft a project status update for the project's Slack channel: gather Linear/Notion + GitHub activity since the last status, reconcile the roadmap with reality, draft progress / blockers / what's next. Never posts without approval. |
 
-`explain`, `deliver`, `bug-hunt`, and `flake-hunt` are **repo-agnostic** — they derive
+`explain`, `deliver`, `bug-hunt`, `flake-hunt`, and `project-status` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -91,6 +92,9 @@ extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
 - **ownerCanSelfMerge** — whether `deliver` may `gh pr merge --admin` (default: no).
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
+- **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
+  IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),
+  and audience (e.g. non-technical business owner).
 
 Repo slug and default branch are derived from `git` / `gh`, not the profile. If a needed
 knob is missing, the skills fall back to asking you.
