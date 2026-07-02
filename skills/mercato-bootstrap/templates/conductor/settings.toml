@@ -4,11 +4,11 @@
 # `.conductor/settings.toml`; ship the three sibling scripts + `.worktreeinclude` too
 # (see the conductor/ template dir). Each worktree runs concurrently in isolation:
 #   - Port:     $CONDUCTOR_PORT gives every worktree its own dev-server port (run hook).
-#   - Database: setup maintains a project TEMPLATE DB (migrated + seeded once) and CLONES each
-#               worktree's own DB from it (CREATE DATABASE <worktree> TEMPLATE <tmpl>) — so a new
-#               worktree starts already seeded, with no per-worktree reseed. The DB name is
-#               derived from the worktree folder and written into this worktree's own
-#               apps/mercato/.env.
+#   - Database: setup maintains a project TEMPLATE DB (named after the compose project, migrated
+#               + seeded once) and CLONES each worktree's own DB from it (CREATE DATABASE
+#               <worktree> TEMPLATE {{PROJECT_SLUG}}) — so a new worktree starts already seeded,
+#               with no per-worktree reseed. The worktree DB name is derived from the worktree
+#               folder and written into this worktree's own apps/mercato/.env.
 #   - Infra:    one shared Postgres/Redis/Meilisearch docker stack (compose project
 #               {{PROJECT_SLUG}}), reused across worktrees; per-worktree DBs are separate
 #               databases inside it.
