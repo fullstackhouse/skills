@@ -12,8 +12,9 @@ Private collection of FullstackHouse Claude Code skills.
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
 | [`project-status`](./skills/project-status/SKILL.md) | Draft a project status update for the project's Slack channel: gather Linear/Notion + GitHub activity since the last status, reconcile the roadmap with reality, draft progress / blockers / what's next. Never posts without approval. |
+| [`design-polish`](./skills/design-polish/SKILL.md) | Audit and improve a web app/prototype's visual design and UX (Refactoring UI + UX heuristics): screenshot via Playwright → prioritized audit → targeted fixes reusing design tokens → re-screenshot to verify. |
 
-`explain`, `deliver`, `bug-hunt`, `flake-hunt`, and `project-status` are **repo-agnostic** — they derive
+`explain`, `deliver`, `bug-hunt`, `flake-hunt`, `project-status`, and `design-polish` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
