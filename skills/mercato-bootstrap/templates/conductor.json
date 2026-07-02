@@ -1,7 +1,0 @@
-{
-  "_comment": "FSH Open Mercato conductor config. Replace {{PROJECT_SLUG}} with a machine-unique compose project name (e.g. 'groomershop-mercato'). All worktrees share ONE docker stack + DB rooted at the main checkout (CONDUCTOR_ROOT_PATH); the app HTTP port is per-worktree via CONDUCTOR_PORT. Per-project infra host ports are set in apps/mercato/.env (remapped to avoid clashing with other Mercato stacks).",
-  "scripts": {
-    "setup": "bash -c 'set -e; for f in .envrc apps/mercato/.env; do [ -f \"$CONDUCTOR_ROOT_PATH/$f\" ] && ln -sf \"$CONDUCTOR_ROOT_PATH/$f\" \"$f\" && echo \"Linked $f\"; done; corepack enable >/dev/null 2>&1 || true; if [ -d apps/mercato ]; then (cd apps/mercato && yarn install); if docker info >/dev/null 2>&1; then docker compose -p {{PROJECT_SLUG}} --project-directory \"$CONDUCTOR_ROOT_PATH/apps/mercato\" up -d --no-recreate; else echo \"Docker not running — start it, then: docker compose -p {{PROJECT_SLUG}} --project-directory $CONDUCTOR_ROOT_PATH/apps/mercato up -d\"; fi; else echo \"apps/mercato not scaffolded yet — skipping\"; fi'",
-    "run": "bash -c '[ -d apps/mercato ] && cd apps/mercato && yarn generate && yarn db:migrate && PORT=$CONDUCTOR_PORT yarn dev || echo \"apps/mercato not scaffolded yet — nothing to run\"'"
-  }
-}

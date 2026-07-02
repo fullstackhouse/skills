@@ -1,0 +1,5 @@
+# Gitignored files Conductor copies into each new workspace (not symlinked),
+# so per-worktree env overrides (e.g. the DATABASE_URL isolation rewrite) stay local.
+# Uses .gitignore pattern syntax, relative to the repo root.
+.env*
+apps/mercato/.env*
