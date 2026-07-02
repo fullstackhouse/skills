@@ -52,6 +52,13 @@ Improve an existing UI iteratively: **see it → audit it → fix the highest-im
 - Disabled controls explain why (or stay enabled and validate on submit).
 - Keyboard basics work: focus visible, Enter submits, Esc closes dialogs.
 
+### Business rules & lifecycle
+- Edit affordances match the entity's state: an immutable status (released, closed, posted…) shows **no** add/edit/delete controls — only the sanctioned path (new revision, correction document, ECN).
+- Destructive actions match domain semantics: archive vs delete; block or warn when the record is referenced elsewhere (where-used, open orders).
+- Identifiers that downstream documents reference (revision labels, numbers) are not editable after issue.
+- Derived/inferred values (make-vs-buy, computed totals) say what they're based on and what they exclude — a total that silently omits external lead time or scrap misleads its readers.
+- State-changing actions validate readiness (don't release an empty BOM) and say what else changes ("revision A will be archived").
+
 ### Copy
 - Sentence case everywhere. Write in the app's language and use the domain terms its users know (check the UI / i18n — some apps are non-English-first). Say what happened, not codes: "Can't delete — this BOM is used in 3 orders", not "Error 409".
 
