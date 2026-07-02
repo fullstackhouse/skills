@@ -42,10 +42,22 @@ npx create-mercato-app@latest mercato --preset empty --skip-agentic-setup --no-i
 ### 2. Reconcile with the monorepo root
 - Keep a **thin root `package.json`** that proxies to the app (`yarn --cwd apps/mercato <script>`
   for setup/dev/build/lint/typecheck/test/generate/db:migrate/initialize).
-- Install `templates/conductor.json` at the repo root, replacing `{{PROJECT_SLUG}}` with a
-  machine-unique compose project name (e.g. `groomershop-mercato`). This makes conductor
-  worktrees **share one docker stack + DB** (rooted at `CONDUCTOR_ROOT_PATH`) and gives each
-  worktree a unique app port via `$CONDUCTOR_PORT`.
+- Install the **conductor per-worktree isolation** system from `templates/conductor/` (replace
+  `{{PROJECT_SLUG}}` with a machine-unique compose project name, e.g. `groomershop-mercato`):
+  - `settings.toml` → `.conductor/settings.toml` (concurrent `setup` + `run` hooks).
+  - `conductor-setup.sh` / `conductor-run.sh` → `scripts/`.
+  - `conductor-db.mjs` → `apps/mercato/scripts/` (maintenance-level create/clone/drop SQL).
+  - `.worktreeinclude` → repo root (copies `.env` per worktree instead of symlinking, so each
+    worktree's `DATABASE_URL` rewrite stays local).
+  - All worktrees **share one docker stack**, but **each gets its own database**. Setup keeps a
+    project **template DB** (`{{project}}_template`, migrated + seeded once) and CLONES each
+    worktree's DB from it (`CREATE DATABASE <worktree> TEMPLATE <template>`) — so a new worktree
+    is ready in seconds, **already seeded, with no per-worktree `yarn initialize` reseed**. The
+    DB name is derived from the worktree folder; the app port is per-worktree via `$CONDUCTOR_PORT`.
+  - Prereq: the scaffold's `apps/mercato/scripts/dev-database-url.mjs` (ships with
+    create-mercato-app) — the hooks reuse its `deriveDatabaseNameFromCwd` / `rewriteDatabaseUrl`
+    / `validateDatabaseName` helpers. (The older single-shared-DB `conductor.json` is superseded
+    by this per-worktree system.)
 
 ### 3. Allocate non-clashing infra ports  ← critical on multi-project machines
 The framework defaults (Postgres 5432 / Redis 6379 / Meilisearch 7700) collide with any other
@@ -100,6 +112,12 @@ breaks npm packages and install links.
   - Demo/onboarding copy that links to the framework: `startPage.*`, `notices.demo.installLink`.
 - Re-validate each edited locale JSON. Confirm `grep -ri "open mercato"` only matches the
   intentional framework/install references above.
+- **Out of the app's reach:** a few runtime strings — notably the **login-page brand** and the
+  **transactional email footer** — come from the `@open-mercato/*` **package** i18n defaults, not
+  `src/i18n/*.json`, so this rebrand can't touch them; they keep showing "Open Mercato". Override
+  them **per-tenant via directory branding settings** if the client needs it. Don't chase them in
+  `src` — set the right scope expectation up front (they surfaced as a "why does it still say Open
+  Mercato" loop otherwise).
 
 ### 8. Strip example modules (only if preset = `classic`)
 Prod FSH apps ship **none**. `empty` already has none — skip this step.
@@ -117,6 +135,9 @@ migrations already ran, the cleanest dev reset is to recreate the DB:
 - Optionally install `templates/notify-slack-on-failure.action.yml` →
   `.github/actions/notify-slack-on-failure/action.yml` (reusable composite — preferred over
   copy-pasting the slack step across deploy/cleanup workflows).
+- The CI `lint` step fails on a stock empty-preset scaffold — apply the `yarn lint` fix from the
+  Gotchas table (pin `eslint ^9`, install `templates/eslint.config.mjs`, `lint = eslint .`) so
+  the step is green out of the box.
 
 **After the hosting target is chosen — full CD (deploy + preview environments):**
 See **`references/ci-cd.md`** for the complete, ported-from-edube pattern:
@@ -132,8 +153,10 @@ See **`references/ci-cd.md`** for the complete, ported-from-edube pattern:
   Hetzner k3s + CloudNativePG (tournee). Port modules from the matching repo.
 
 ### 10. Commit
-Commit `apps/mercato/` (incl. `yarn.lock`) + root `conductor.json`/`package.json` + CI.
-Confirm `.env`, `node_modules`, `.mercato/generated` are gitignored. Conventional Commits.
+Commit `apps/mercato/` (incl. `yarn.lock`) + root `package.json` + the conductor system
+(`.conductor/settings.toml`, `scripts/conductor-*.sh`, `apps/mercato/scripts/conductor-db.mjs`,
+`.worktreeinclude`) + CI. Confirm `.env`, `node_modules`, `.mercato/generated` are gitignored.
+Conventional Commits.
 
 ## Gotchas
 | Symptom | Cause / fix |
@@ -144,7 +167,7 @@ Confirm `.env`, `node_modules`, `.mercato/generated` are gitignored. Conventiona
 | `mercato agentic …` "Module not found" | Expected — agentic setup is create-time only, not a runtime CLI command. |
 | Orphan `example_*` tables after classic cleanup | Recreate the dev DB (`docker compose down -v`) — see step 8. |
 | "Demo environment" banner on a **deployed** env | `DEMO_MODE` defaults ON unless explicitly `"false"`. `.env.example` sets it false (local is clean), but `gcloud run deploy --set-env-vars` replaces env — add `DEMO_MODE=false` to the deploy command (and the tofu service env). |
-| `yarn lint` fails: `next lint` "Invalid project directory" or eslint-plugin-react `getFilename is not a function` | Empty preset ships `lint = next lint` (removed in Next 16) and mis-pins `eslint ^10` (incompatible with eslint-config-next 16's react plugin). Fix: set `eslint ^9`, add a flat `eslint.config.mjs` importing `eslint-config-next/core-web-vitals` + `/typescript`, set `lint = eslint .`; downgrade the newer react-hooks/TS rules the vendored scaffold trips to `warn`. |
+| `yarn lint` fails: `next lint` "Invalid project directory" or eslint-plugin-react `getFilename is not a function` | Empty preset ships `lint = next lint` (removed in Next 16) and mis-pins `eslint ^10` (incompatible with eslint-config-next 16's react plugin). Fix: set `eslint ^9`, install `templates/eslint.config.mjs` (flat config importing `eslint-config-next/core-web-vitals` + `/typescript`), set `lint = eslint .`. **Scope, don't blanket, the rule relaxations:** downgrade the newer react-hooks/TS rules the vendored scaffold trips to `warn` **only for `src/app/**` + `src/components/**`** (upstream scaffold code) so your own `src/modules/**` + `src/lib/**` keep the strict defaults — a global downgrade silently kills `no-explicit-any` for your code too. The shipped template already scopes it this way. |
 
 ## Reference repos (FSH)
 - `edube` — thin app-only monorepo (this pattern). `tournee` — polyglot + Hetzner k3s.
