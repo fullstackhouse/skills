@@ -24,8 +24,8 @@ APP_DIR="apps/mercato"
 ENV_FILE="$APP_DIR/.env"
 COMPOSE_PROJECT="{{PROJECT_SLUG}}"
 # Project-level template DB: migrated + seeded once, then cloned per worktree. Named after the
-# compose project so it's obvious which stack it belongs to; never used as a worktree's own DB.
-TEMPLATE_DB="$(printf '%s' "$COMPOSE_PROJECT" | tr '[:upper:]-' '[:lower:]_')_template"
+# compose project (worktree DBs derive from their folder, so they never collide with it).
+TEMPLATE_DB="$(printf '%s' "$COMPOSE_PROJECT" | tr '[:upper:]-' '[:lower:]_')"
 
 corepack enable >/dev/null 2>&1 || true
 

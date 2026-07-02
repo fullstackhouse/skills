@@ -50,10 +50,11 @@ npx create-mercato-app@latest mercato --preset empty --skip-agentic-setup --no-i
   - `.worktreeinclude` → repo root (copies `.env` per worktree instead of symlinking, so each
     worktree's `DATABASE_URL` rewrite stays local).
   - All worktrees **share one docker stack**, but **each gets its own database**. Setup keeps a
-    project **template DB** (`{{project}}_template`, migrated + seeded once) and CLONES each
-    worktree's DB from it (`CREATE DATABASE <worktree> TEMPLATE <template>`) — so a new worktree
-    is ready in seconds, **already seeded, with no per-worktree `yarn initialize` reseed**. The
-    DB name is derived from the worktree folder; the app port is per-worktree via `$CONDUCTOR_PORT`.
+    project **template DB** (named after the compose project, e.g. `groomershop_mercato`; migrated
+    + seeded once) and CLONES each worktree's DB from it (`CREATE DATABASE <worktree> TEMPLATE
+    <project>`) — so a new worktree is ready in seconds, **already seeded, with no per-worktree
+    `yarn initialize` reseed**. The worktree DB name is derived from its folder (so it never
+    collides with the template); the app port is per-worktree via `$CONDUCTOR_PORT`.
   - Prereq: the scaffold's `apps/mercato/scripts/dev-database-url.mjs` (ships with
     create-mercato-app) — the hooks reuse its `deriveDatabaseNameFromCwd` / `rewriteDatabaseUrl`
     / `validateDatabaseName` helpers. (The older single-shared-DB `conductor.json` is superseded
