@@ -25,7 +25,7 @@ Improve an existing UI iteratively: **see it → audit it → fix the highest-im
 
 ### Grouping & layout
 - **Proximity = relationship.** Everything about one concept sits together (e.g. all customer info on an invoice in one block). Space *between* groups > space *within* groups.
-- Start with generous whitespace, remove only where density is a real requirement (data tables in an ERP can be dense — forms and headers shouldn't be).
+- Start with generous whitespace, remove only where density is a real requirement (data-heavy tables in dashboards or admin tools can be dense — forms and headers shouldn't be).
 - Stick to a spacing/size scale (Tailwind steps); no arbitrary values. Align everything to a grid; constrain text to readable line lengths (~65–75ch).
 - Don't stretch content to fill wide screens — cap widths, or give tables room while keeping forms narrow.
 
@@ -53,14 +53,14 @@ Improve an existing UI iteratively: **see it → audit it → fix the highest-im
 - Keyboard basics work: focus visible, Enter submits, Esc closes dialogs.
 
 ### Business rules & lifecycle
-- Edit affordances match the entity's state: an immutable status (released, closed, posted…) shows **no** add/edit/delete controls — only the sanctioned path (new revision, correction document, ECN).
-- Destructive actions match domain semantics: archive vs delete; block or warn when the record is referenced elsewhere (where-used, open orders).
-- Identifiers that downstream documents reference (revision labels, numbers) are not editable after issue.
-- Derived/inferred values (make-vs-buy, computed totals) say what they're based on and what they exclude — a total that silently omits external lead time or scrap misleads its readers.
-- State-changing actions validate readiness (don't release an empty BOM) and say what else changes ("revision A will be archived").
+- Edit affordances match the entity's state: an immutable status (published, locked, closed, posted…) shows **no** add/edit/delete controls — only the sanctioned path (new version, amendment, correction document).
+- Destructive actions match domain semantics: archive vs delete; block or warn when the record is referenced elsewhere (still in use, open dependents).
+- Identifiers that downstream records reference (version labels, invoice numbers) are not editable after issue.
+- Derived/inferred values (computed totals, rolled-up figures) say what they're based on and what they exclude — a total that silently omits tax, shipping, or unavailable inputs misleads its readers.
+- State-changing actions validate readiness (don't finalize an empty record) and say what else changes ("version A will be archived").
 
 ### Copy
-- Sentence case everywhere. Write in the app's language and use the domain terms its users know (check the UI / i18n — some apps are non-English-first). Say what happened, not codes: "Can't delete — this BOM is used in 3 orders", not "Error 409".
+- Sentence case everywhere. Write in the app's language and use the domain terms its users know (check the UI / i18n — some apps are non-English-first). Say what happened, not codes: "Can't delete — this record is used in 3 orders", not "Error 409".
 
 ## Anti-patterns — flag on sight
 Carousels; tooltips carrying essential info; unlabeled icon buttons; placeholder-as-label; modal opening another modal; more than one solid primary button per view; grey-on-color text; border-overload; ALL CAPS body text; centered long-form text; "Are you sure?" on harmless actions; truncation without a way to see the full value.
