@@ -101,9 +101,45 @@ extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
 Repo slug and default branch are derived from `git` / `gh`, not the profile. If a needed
 knob is missing, the skills fall back to asking you.
 
+## Releasing (bump the version — this is not optional)
+
+**Any PR that adds, removes, renames, or changes a skill MUST bump `version` in
+[`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json) in the same PR.**
+
+Why it matters — the failure mode this repo already hit: Claude Code decides
+whether an installed plugin is up to date by comparing the **version string**,
+not the git SHA. `autoUpdate` on the marketplace refreshes the *listing*, but an
+existing install of `fsh@0.1.0` stays frozen at `0.1.0` until the version
+changes. Three skills (`design-explore`, `design-polish`, `project-status`) were
+merged without a bump, so everyone who installed earlier silently never received
+them — the skills were on `main` but invisible to consumers.
+
+Rules:
+
+- Bump per [SemVer](https://semver.org/): **patch** for wording/fix-only edits to
+  an existing skill, **minor** for a new skill or a new capability, **major** for
+  a breaking change to a skill's contract or the profile knobs.
+- One bump per PR is enough — don't bump per-commit.
+- CI enforces this: [`.github/workflows/version-check.yml`](./.github/workflows/version-check.yml)
+  fails a PR that touches `skills/**` or `.claude-plugin/**` without raising the
+  version above the base branch's.
+
+After a version bump lands on `main`, consumers pick it up on their next
+marketplace refresh. To force it immediately:
+
+```
+/plugin marketplace update fullstackhouse-skills
+/plugin uninstall fsh@fullstackhouse-skills
+/plugin install fsh@fullstackhouse-skills
+```
+
+(New/updated skills take effect in the *next* session, not mid-session.)
+
 ## Conventions
 
 - Skills are agent-facing procedures: concise, imperative, with exact commands and
   explicit decision points. Distill — don't paste docs verbatim.
 - Bundled `scripts/` are POSIX `sh`/`bash`, idempotent, and safe to re-run.
 - Bundled `templates/` use `{{PLACEHOLDER}}` tokens the skill substitutes.
+- **Bump `plugin.json` `version` in the same PR as any skill change** (see
+  [Releasing](#releasing-bump-the-version--this-is-not-optional)) — CI enforces it.
