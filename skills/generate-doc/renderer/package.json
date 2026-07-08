@@ -1,0 +1,18 @@
+{
+  "name": "@fsh/render-doc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone FSH branded Markdown → PDF/DOCX renderer, bundled by the generate-doc skill (no monorepo dependency).",
+  "bin": {
+    "fsh-render-doc": "./cli.ts"
+  },
+  "scripts": {
+    "render": "node --experimental-strip-types cli.ts"
+  },
+  "dependencies": {
+    "marked": "^15.0.6",
+    "playwright": "^1.57.0",
+    "zx": "^8.8.5"
+  }
+}

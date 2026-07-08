@@ -1,28 +1,30 @@
 ---
 name: generate-doc
-description: Generate branded FullstackHouse client documents (implementation contracts and technical specs) as a final PDF and an editable DOCX from Markdown, using the FSH monorepo's `render-doc` CLI. Use when asked to produce/render a client contract or spec, turn a draft `.md` into a branded PDF/DOCX, or set up documents for a new client. Args: path to the source `.md` (or a client folder), optionally template (contract|spec) and format (pdf|docx).
+description: Generate branded FullstackHouse client documents (implementation contracts and technical specs) as a final PDF and an editable DOCX from Markdown, using a renderer bundled with this skill (no repo access required). Use when asked to produce/render a client contract or spec, turn a draft `.md` into a branded PDF/DOCX, or set up documents for a new client. Args: path to the source `.md` (or a client folder), optionally template (contract|spec) and format (pdf|docx).
 ---
 
 # Generate FSH client documents
 
 Turn a Markdown draft into a **branded FSH PDF** (final / send / sign) and an **editable DOCX**
-(for the client's redline). The rendering engine is the `render-doc` command in the FSH internal
-monorepo's `accounting` package — this skill locates it, scaffolds new docs from templates, and
-runs it. Do **not** reimplement rendering here.
+(for the client's redline). The rendering engine is **bundled with this skill** (`renderer/`) —
+self-contained, no monorepo or other repo access required. This skill bootstraps it, scaffolds
+new docs from templates, and runs it. Do **not** reimplement rendering here.
 
 ## When to use
 - "Render the contract/spec for <client>", "make a branded PDF from this `.md`", "set up docs for a new client".
 - NOT for writing the legal/technical **content** — that's yours to draft or reuse. This skill formats and renders it.
 
-## Locate the renderer (do this first)
-The `render-doc` CLI lives in the FSH internal tooling monorepo, `accounting/` package. Find it, in order:
-1. If the current repo is that monorepo (has `accounting/src/commands/render-doc.ts`), use `accounting/`.
-2. Else try, in order: `~/src/fsh/fsh-monorepo/accounting`, `~/src/fullstackhouse/fsh-monorepo/accounting`.
-3. Else ask the user for the monorepo path.
+## Bootstrap the bundled renderer (once per machine)
+Resolve `SKILL_DIR` = the directory containing this `SKILL.md`. From there:
 
-Sanity-check it exists: `test -f "<accounting>/src/commands/render-doc.ts"`. First run in a fresh
-checkout may need `pnpm install` + `pnpm exec playwright install chromium` (see that package's CLAUDE.md).
-`pandoc` must be on PATH for DOCX.
+```bash
+bash "$SKILL_DIR/scripts/bootstrap.sh"
+```
+
+Idempotent: installs the renderer's node deps and Playwright's Chromium. Needs `node`
+(≥ 22.6, for `--experimental-strip-types`) and `npm`. **PDF works after this.** DOCX
+additionally needs `pandoc` on PATH — the bootstrap reports whether it's present; without it,
+render `--format pdf` only (the renderer errors clearly if you ask for DOCX without pandoc).
 
 ## Two templates × two formats
 - **`contract`** (default) — sober letterhead, no per-heading accents. A legal doc.
@@ -32,7 +34,7 @@ checkout may need `pnpm install` + `pnpm exec playwright install chromium` (see 
 Recommended per document: **contract → DOCX for negotiation + PDF for signing; spec → PDF** (add DOCX if the client edits it).
 
 ## Workflow
-1. **Locate the renderer** (above).
+1. **Bootstrap the renderer** (above) — once per machine.
 2. **Get the source `.md`.**
    - Existing draft → use it.
    - New doc → copy a bundled template (`templates/contract.md` / `templates/spec.md`) into the client folder and fill it. Keep client docs together, e.g. `docs/leads/<client>/{umowa,spec}.md` plus a `makiety/` subfolder for screenshots.
@@ -49,13 +51,14 @@ Recommended per document: **contract → DOCX for negotiation + PDF for signing;
    ---
    ```
    For a **contract**, keep `client`/`date` out of frontmatter — the parties belong in the body; the title block stays clean. For a **spec**, include them (they render on the cover).
-4. **Render** — absolute paths, run from the `accounting` dir:
+4. **Render** — use absolute paths for `--input`/`--output` (the renderer's own dir is the CWD):
    ```bash
-   cd "<accounting>"
-   pnpm cli render-doc --input "<abs>/umowa.md"  --template contract --format docx --output "<abs>/umowa.docx"
-   pnpm cli render-doc --input "<abs>/umowa.md"  --template contract              --output "<abs>/umowa.pdf"
-   pnpm cli render-doc --input "<abs>/spec.md"   --template spec  --title "Załącznik nr 1 — Specyfikacja techniczna" \
-       --subtitle "System ERP dla <Client>" --client "<Client>" --date "<YYYY-MM-DD>" --output "<abs>/spec.pdf"
+   cd "$SKILL_DIR/renderer"
+   R="node --experimental-strip-types cli.ts"
+   $R --input "<abs>/umowa.md" --template contract --format docx --output "<abs>/umowa.docx"
+   $R --input "<abs>/umowa.md" --template contract               --output "<abs>/umowa.pdf"
+   $R --input "<abs>/spec.md"  --template spec --title "Załącznik nr 1 — Specyfikacja techniczna" \
+      --subtitle "System ERP dla <Client>" --client "<Client>" --date "<YYYY-MM-DD>" --output "<abs>/spec.pdf"
    ```
    Flags: `--template`, `--format`, `--title`, `--subtitle`, `--client`, `--date`, `--no-confidential`, `--output`.
 5. **Verify** before handing off: page count sane, images present, no literal `## §` leaked, `[TBD]` fields visible. Rasterize a couple of pages (`pdftoppm -png -r 80 -f 1 -l 2 spec.pdf /tmp/p`) and look.
