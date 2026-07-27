@@ -9,13 +9,14 @@ ship: deliver PRs, hunt bugs and flaky tests, explain changes, report status, an
 |-------|---------|
 | [`explain`](./skills/explain/SKILL.md) | Explain an existing change (working tree / branch / PR / commit) in plain language with a clearly-hedged merge recommendation. Read-only. |
 | [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal. |
+| [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, degrade to a single comment when you lack write access. Never merges. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
 | [`project-status`](./skills/project-status/SKILL.md) | Draft a project status update for the project's Slack channel: gather Linear/Notion + GitHub activity since the last status, reconcile the roadmap with reality, draft progress / blockers / what's next. Never posts without approval. |
 | [`design-polish`](./skills/design-polish/SKILL.md) | Audit and improve a web app/prototype's visual design and UX (Refactoring UI + UX heuristics): screenshot via Playwright → prioritized audit → targeted fixes reusing design tokens → re-screenshot to verify. |
 | [`design-explore`](./skills/design-explore/SKILL.md) | Divergent counterpart to `design-polish`: build ~3 structurally different working alternatives of a screen with the existing design system, screenshot them side by side, present trade-offs + a recommendation, and let the user pick. |
 
-`explain`, `deliver`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -72,8 +73,8 @@ between the two copies — that's expected, not a bug.
 
 ## Skill profile
 
-The repo-agnostic skills (`deliver`, `bug-hunt`, `flake-hunt`; `explain` to a lesser
-extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
+The repo-agnostic skills (`deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`; `explain` to a
+lesser extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
 `AGENTS.md` / `package.json` scripts. For knobs that aren't derivable from docs, add a
 **`## Skill profile`** section to the consuming repo's root `CLAUDE.md`. Recognized knobs:
 
@@ -85,6 +86,11 @@ extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
   status / priority / tags.
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
 - **ownerCanSelfMerge** — whether `deliver` may `gh pr merge --admin` (default: no).
+- **forkRemote** — the remote `upstream-pr` pushes to when contributing from a fork
+  (default: auto-detected from the branch's remote / `@{push}` / remote classification).
+- **baseBranch** — the PR base when it differs from the GitHub default branch
+  (default: auto-detected — repo agent config → this profile → CONTRIBUTING/PR template →
+  default branch).
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),
