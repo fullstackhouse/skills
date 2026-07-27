@@ -1,0 +1,182 @@
+---
+name: upstream-pr
+description: Open or update a cross-repository (fork) pull request — push the current branch to the fork remote, target the upstream repo's real base branch, respect the upstream's label/QA policy, and degrade gracefully when you lack write access there. Use when contributing to a repo you don't own, or whenever the invocation mentions a fork/upstream remote ("make an upstream PR via the X remote"). Never merges.
+---
+
+# upstream-pr
+
+You are running the **upstream-pr** skill. Goal: get the current branch reviewed upstream — pushed to the fork you can write to, opened against the upstream's real base branch, with the upstream's own PR policy applied as far as your permissions allow.
+
+Contributing from a fork is a **triangle**: commits go to one repo (the fork), review happens in another (the upstream). Almost every `git` and `gh` default assumes a single repo, so all four coordinates — fork remote, upstream slug, base branch, permission level — must be resolved explicitly, and *shown to the user before anything mutating*. Each one has a cheap, silent failure mode: a bare `git push` that hits a repo you shouldn't write to, or a PR opened against the GitHub default branch when the project actually merges into another one.
+
+## Project specifics — read these first
+
+This skill is repo-agnostic. It carries no label taxonomy, no QA rules, no check commands — it reads them from the consuming repo at runtime and defers to them. Before Phase 1, gather:
+
+- **Agent config** — a machine-readable policy file if the repo has one (e.g. `.ai/agentic.config.json`): `baseBranch`, `labels.*`, `qaGate`, `validation.commands`.
+- **PR policy docs** — the repo's `CONTRIBUTING.md`, PR template, and any `.ai/docs/pr-workflow.md`-style document: label taxonomy, priority/risk inference, QA gate, and **restricted paths** (trees that are off-limits to outside contributions).
+- **`## Skill profile`** in the root `CLAUDE.md` / `AGENTS.md` — the curated source when present. Knobs this skill reads: `forkRemote`, `baseBranch`.
+- **Check commands** — only needed if Phase 3 fires; same source as the sibling `deliver` skill.
+
+If a needed value isn't documented and can't be inferred, ask rather than guess.
+
+## Phases
+
+### 0. Preflight
+
+Record the branch and starting SHA:
+
+```bash
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git rev-parse HEAD
+```
+
+Refuse to run if `BRANCH` is the base branch or either repo's default branch — this skill operates on a feature branch only. If the working tree has uncommitted changes, surface them and ask the user what to do; never silently `git add -A`.
+
+### 1. Resolve the triangle
+
+Resolve `FORK_REMOTE`, `UPSTREAM_SLUG`, `BASE`, and your upstream permission level using the rules in [Resolution rules](#resolution-rules) below. Then print a table of the four values **with the source of each**, before anything mutating happens:
+
+```
+fork remote   fsh → fullstackhouse/open-mercato   (branch.<branch>.remote, isFork=true, parent matches upstream)
+upstream      open-mercato/open-mercato           (fork's parent)
+base branch   develop                             (.ai/agentic.config.json: baseBranch)
+permission    READ                                (repos/<up> .permissions: push=false, triage=false)
+```
+
+Then fetch the base — everything downstream depends on it being current:
+
+```bash
+git fetch "$UPSTREAM_REMOTE" "$BASE"
+```
+
+### 2. Guardrail checks
+
+Hard-stop here, *before* pushing anything:
+
+1. **Base exists** upstream (`git rev-parse --verify "$UPSTREAM_REMOTE/$BASE"` after the fetch).
+2. **Branch ≠ base.**
+3. **Restricted paths.** Diff against the freshly-fetched base (`git diff --name-only "$UPSTREAM_REMOTE/$BASE"...HEAD`) and check it against the trees the repo's CONTRIBUTING marks as off-limits to outside contributions. If the branch touches one, stop and report — a PR that will be closed unmerged is worse than no PR.
+
+### 3. Local checks — only if the branch is unpushed or behind
+
+Detect:
+
+```bash
+git rev-list --left-right --count '@{push}...HEAD'   # "<behind> <ahead>"; 0 0 = nothing new to push
+```
+
+If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`.
+
+Why this matters more than in a same-repo PR: on a fork PR, CI is usually gated on maintainer approval. A red push doesn't cost you a rerun, it costs a human round-trip.
+
+### 4. Push to the fork
+
+Explicit remote and refspec, always:
+
+```bash
+git push "$FORK_REMOTE" "HEAD:refs/heads/$BRANCH"
+```
+
+Never a bare `git push` (its target depends on config you didn't set), never `--force`, never `-u` (don't rewrite the user's git config).
+
+### 5. Create or update the PR
+
+Look for an existing PR for this head. **`gh pr list --head "owner:branch"` does not work cross-repo** — it returns `[]` even when the PR exists. Use the REST endpoint, which honours the `owner:branch` form:
+
+```bash
+FORK_OWNER=${FORK_SLUG%%/*}
+gh api "repos/$UPSTREAM_SLUG/pulls?state=open&head=$FORK_OWNER:$BRANCH"
+```
+
+- **An open PR exists** → this is an *update*: the Phase 4 push already refreshed it. Refresh the body only if it no longer describes the current commit set. Never change base, title, or labels on update.
+- **No open PR** → re-query with `state=all` before creating. If a **closed** PR exists for this exact head, surface it to the user and ask before opening a replacement — it may have been rejected, and silently re-opening a rejection is a way to annoy maintainers.
+- **Otherwise** → create:
+
+  ```bash
+  gh pr create --repo "$UPSTREAM_SLUG" --base "$BASE" --head "$FORK_OWNER:$BRANCH" --draft \
+    --title "<conventional-commit style>" --body-file .context/upstream-pr/body.md
+  ```
+
+  Fill the repo's PR template verbatim — read it and answer its sections. **Never `--fill`**: it discards the template. Open as a draft unless the user said otherwise; a maintainer's first signal should be a PR that's explicitly ready.
+
+### 6. Metadata & degradation
+
+`triage` is the threshold for writing PR metadata (labels, assignee, reviewer).
+
+- **At or above `triage`** → apply what the repo's policy calls for: pipeline / category / priority / risk labels and QA meta labels, per its taxonomy and inference rules. Validate every label name against `gh label list --repo "$UPSTREAM_SLUG"` first (label *reads* work at `read`).
+- **Below `triage`** → emit exactly **one** consolidated comment on the PR: intended labels with the rationale for each, the intended assignee, and the reviewer **by role, never by handle**. Then stop and say so in the report. Specifically:
+  - Do **not** post one comment per label, and do not retry the writes.
+  - Skip any "claim" label (`in-progress` and friends) entirely — a claim you cannot release later is worse than no claim.
+  - If the repo has a QA gate, note that the PR stays gated until a maintainer applies the QA labels; an evidence comment alone doesn't clear it.
+
+### 7. Report
+
+Final message must include:
+
+- The PR URL, and whether it was **created** or **updated**.
+- The four resolved values and where each came from.
+- Your permission level upstream and everything that was consequently **deferred to a maintainer** (labels, assignee, reviewer, QA gate).
+- Any PR-template checkbox left unticked, named explicitly — especially CLA/legal ones.
+- Whether a closed PR for the same head exists.
+- An explicit line that **this skill does not merge** — the PR is handed to the upstream's process.
+
+Mention these two dead ends once, so nobody re-derives them: `gh pr create --dry-run` is *not* read-only (its own help says it "May still push git changes"), and cross-repo PRs generally can't get package previews from CI (workflows commonly hard-stop on `isCrossRepository: true`).
+
+## Resolution rules
+
+### Fork remote
+
+Ordered, offline-first — one API call on the happy path. Classify a candidate with:
+
+```bash
+gh repo view "$SLUG" --json isFork,parent,viewerPermission
+```
+
+0. **Named in the invocation** ("via the *fullstackhouse* remote") — a remote name or an owner login. Use it.
+1. **Fast path:** `git config --get "branch.$BRANCH.remote"`. Classify it; accept if `isFork == true` **or** `viewerPermission` ∈ {WRITE, MAINTAIN, ADMIN}.
+2. `git rev-parse --abbrev-ref '@{push}'`, strip the trailing `/$BRANCH`.
+3. **Offline prefilter:** among the remaining remotes, keep only those whose slug's *repo name* matches the upstream's but whose *owner* differs. This drops unrelated same-owner repos (`fullstackhouse/helmet-mercato` vs `open-mercato/open-mercato`) at zero API cost.
+4. Classify the survivors: a fork iff `isFork == true` **and** `parent` is the upstream slug (`.parent.owner.login + "/" + .parent.name`).
+5. **≥2 survivors** → show the table and ask the user. **0 survivors** → stop and print the `git remote add` command they'd need. Never run `gh repo fork` or `git remote add` yourself.
+
+### Upstream slug
+
+In order: the fork's `parent` → a remote literally named `upstream` → `gh repo view --json parent` on `origin` → `origin` itself.
+
+When several remotes point at the same upstream slug (common: both `origin` and `upstream`), pick the one whose remote-tracking ref for the base is **freshest** — `git log -1 --format=%ci "<remote>/$BASE"` — and use it as `UPSTREAM_REMOTE` for fetching.
+
+### Base branch
+
+**Never hardcode a base.** The GitHub default branch is the *last* resort, not the first — plenty of projects merge into `develop`, `next`, or a release line while `defaultBranchRef` says `main`.
+
+0. `git config --get "branch.$BRANCH.gh-merge-base"`
+1. The repo's agent config `baseBranch` (ignore a literal `"auto"`)
+2. `## Skill profile` → `baseBranch` in the root `CLAUDE.md` / `AGENTS.md`
+3. The PR template's or CONTRIBUTING's wording ("Open PRs against `develop`")
+4. The base used by this fork owner's other open upstream PRs
+5. `gh repo view "$UPSTREAM_SLUG" --json defaultBranchRef -q .defaultBranchRef.name`
+
+Proceed silently on tiers 0–3 and state the source in the report. State it inline when the value came from tier 4–5. Ask the user only when two inferred tiers **disagree**.
+
+### Permission level
+
+Probe once:
+
+```bash
+gh api "repos/$UPSTREAM_SLUG" --jq '.permissions'   # {"admin":false,"maintain":false,"pull":true,"push":false,"triage":false}
+```
+
+Do **not** use `repos/<up>/collaborators/<user>/permission` — it returns **403 "Must have push access"** for exactly the read-only accounts that need the fallback path, so it can't be used to detect them.
+
+## Hard rules
+
+1. **Never merge.** No `gh pr merge`, no `--auto`, no `--admin`. This skill hands the PR to the upstream's process and stops.
+2. **Never push to the upstream remote**, and never to a default or protected branch on any remote.
+3. **Never force-push.** A fork PR's history is a maintainer's review context.
+4. **Never mutate the user's git setup** — no `gh repo fork`, no `git remote add`, no `git config` writes, no `push -u`. Print the command and let them run it.
+5. **Never `--no-verify`, never `--no-gpg-sign`.** Fix the hook's root cause.
+6. **Always fetch the base before computing any diff.** Not theoretical: a month-stale `upstream/<base>` ref makes a 9-file branch look like 2049 files across trees it never touched — enough to trip a restricted-path guardrail that a fresh base clears. Every diff in this skill is against the freshly-fetched ref.
+7. **Respect the PR template verbatim** — no `--fill`.
+8. **Never tick a CLA or legal checkbox on the user's behalf.** Leave it unchecked and name it in the report. Tick only factual boxes you actually verified (e.g. "targets `develop`").
+9. **Don't restate the consuming repo's policy** — read `CONTRIBUTING.md` / the workflow doc / the agent config at runtime. Anything hardcoded here goes stale in a repo you don't own.
