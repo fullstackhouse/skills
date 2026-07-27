@@ -94,11 +94,11 @@ gh api "repos/$UPSTREAM_SLUG/pulls?state=open&head=$FORK_OWNER:$BRANCH"
 - **Otherwise** → create:
 
   ```bash
-  gh pr create --repo "$UPSTREAM_SLUG" --base "$BASE" --head "$FORK_OWNER:$BRANCH" --draft \
+  gh pr create --repo "$UPSTREAM_SLUG" --base "$BASE" --head "$FORK_OWNER:$BRANCH" \
     --title "<conventional-commit style>" --body-file .context/upstream-pr/body.md
   ```
 
-  Fill the repo's PR template verbatim — read it and answer its sections. **Never `--fill`**: it discards the template. Open as a draft unless the user said otherwise; a maintainer's first signal should be a PR that's explicitly ready.
+  Fill the repo's PR template verbatim — read it and answer its sections. **Never `--fill`**: it discards the template. Open it **ready for review, not as a draft** — a maintainer's first signal should be a PR that's explicitly ready, and a draft may never enter the upstream's review pipeline at all (pipeline labels like `review` typically only apply once it's ready). Pass `--draft` only when the user explicitly asked for one.
 
 ### 6. Metadata & degradation
 
