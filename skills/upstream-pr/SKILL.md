@@ -107,12 +107,14 @@ gh api "repos/$UPSTREAM_SLUG/pulls?state=open&head=$FORK_OWNER:$BRANCH"
 `triage` is the threshold for writing PR metadata (labels, assignee, reviewer).
 
 - **At or above `triage`** → apply what the repo's policy calls for: pipeline / category / priority / risk labels and QA meta labels, per its taxonomy and inference rules. Validate every label name against `gh label list --repo "$UPSTREAM_SLUG"` first (label *reads* work at `read`).
-- **Below `triage`** → emit exactly **one** consolidated comment on the PR: intended labels with the rationale for each, the intended assignee, and the reviewer **by role, never by handle**. Then stop and say so in the report. Specifically:
+- **Below `triage`** → emit exactly **one** consolidated *metadata-intent* comment on the PR: intended labels with the rationale for each, the intended assignee, and the reviewer **by role, never by handle**. Then stop and say so in the report. Specifically:
   - Do **not** post one comment per label, and do not retry the writes.
   - Skip any "claim" label (`in-progress` and friends) entirely — a claim you cannot release later is worse than no claim.
   - If the repo has a QA gate, note that the PR stays gated until a maintainer applies the QA labels; an evidence comment alone doesn't clear it.
 
 Then, on **both** paths, apply any entry in [Upstream exceptions](#upstream-exceptions) matching `UPSTREAM_SLUG`. Those are FSH's own obligations toward that upstream, not its policy — they don't lapse just because you're below `triage`.
+
+The "exactly one" rule above bounds *metadata-intent* comments only. An exception may require its own standalone comment (a slash command has to be the whole body to be parsed) — post it, and never suppress it to satisfy the one-comment rule.
 
 ### 7. Report
 
