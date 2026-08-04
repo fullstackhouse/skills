@@ -100,15 +100,21 @@ gh api "repos/$UPSTREAM_SLUG/pulls?state=open&head=$FORK_OWNER:$BRANCH"
 
   Fill the repo's PR template verbatim — read it and answer its sections. **Never `--fill`**: it discards the template. Open it **ready for review, not as a draft** — a maintainer's first signal should be a PR that's explicitly ready, and a draft may never enter the upstream's review pipeline at all (pipeline labels like `review` typically only apply once it's ready). Pass `--draft` only when the user explicitly asked for one.
 
+  **Never `--label` on create.** Labelling is a write you may not have upstream, and `gh pr create` can fail on it *after* the push — costing you the PR. Labels are applied in Phase 6, once the PR exists and can't be lost.
+
 ### 6. Metadata & degradation
 
 `triage` is the threshold for writing PR metadata (labels, assignee, reviewer).
 
 - **At or above `triage`** → apply what the repo's policy calls for: pipeline / category / priority / risk labels and QA meta labels, per its taxonomy and inference rules. Validate every label name against `gh label list --repo "$UPSTREAM_SLUG"` first (label *reads* work at `read`).
-- **Below `triage`** → emit exactly **one** consolidated comment on the PR: intended labels with the rationale for each, the intended assignee, and the reviewer **by role, never by handle**. Then stop and say so in the report. Specifically:
+- **Below `triage`** → emit exactly **one** consolidated *metadata-intent* comment on the PR: intended labels with the rationale for each, the intended assignee, and the reviewer **by role, never by handle**. Then stop and say so in the report. Specifically:
   - Do **not** post one comment per label, and do not retry the writes.
   - Skip any "claim" label (`in-progress` and friends) entirely — a claim you cannot release later is worse than no claim.
   - If the repo has a QA gate, note that the PR stays gated until a maintainer applies the QA labels; an evidence comment alone doesn't clear it.
+
+Then, on **both** paths, apply any entry in [Upstream exceptions](#upstream-exceptions) matching `UPSTREAM_SLUG`. Those are FSH's own obligations toward that upstream, not its policy — they don't lapse just because you're below `triage`.
+
+The "exactly one" rule above bounds *metadata-intent* comments only. An exception may require its own standalone comment (a slash command has to be the whole body to be parsed) — post it, and never suppress it to satisfy the one-comment rule.
 
 ### 7. Report
 
@@ -169,6 +175,52 @@ gh api "repos/$UPSTREAM_SLUG" --jq '.permissions'   # {"admin":false,"maintain":
 
 Do **not** use `repos/<up>/collaborators/<user>/permission` — it returns **403 "Must have push access"** for exactly the read-only accounts that need the fallback path, so it can't be used to detect them.
 
+## Upstream exceptions
+
+Named carve-outs, keyed on `UPSTREAM_SLUG`. The bar for an entry is narrow: an obligation **FSH** owes a particular upstream that the *upstream itself doesn't document*, so no runtime read of its `CONTRIBUTING.md` or agent config can discover it. Anything the upstream does document stays out of here — that's hard rule #9.
+
+### `open-mercato/open-mercato` — always label `partner-request`
+
+FSH contributes to Open Mercato as a certified partner (registered under `8lines` in the upstream's `.github/certified-partners.yml`). Every PR we open there carries `partner-request`; it's how maintainers route partner work. The label has no description upstream and appears in no upstream doc — only in `.github/workflows/community-labels.yml` — which is why it lives here.
+
+Apply it **after** the PR exists, never via `gh pr create --label`. Take the first rung that succeeds, then stop:
+
+1. **`triage` or above** — Phase 6 already resolved your level:
+
+   ```bash
+   gh pr edit "$PR_URL" --add-label partner-request
+   ```
+
+2. **A certified-partner account.** The upstream's `community-labels.yml` accepts `/label partner-request` from any login in that registry, even without repo permissions. Check the acting account:
+
+   ```bash
+   ME=$(gh api user --jq .login)
+   gh api repos/open-mercato/open-mercato/contents/.github/certified-partners.yml \
+     -H 'Accept: application/vnd.github.raw' | grep -i -- "$ME"
+   ```
+
+   (The raw `Accept` header skips the base64 hop the contents API otherwise returns — one less decode step, and no `base64 -d` vs `-D` portability trap.)
+
+   Read the hit — it must be an entry in a `contributors:` list, not an incidental substring. If listed, post a comment whose **entire body is the command** — the workflow matches `startsWith(body, '/label ')`, so it must be its own comment, never folded into the Phase 6 consolidated comment and never prefixed with prose:
+
+   ```bash
+   gh pr comment "$PR_URL" --body '/label partner-request'
+   ```
+
+   The workflow signals by reaction (👍 applied, 😕 refused) and only ever applies `partner-request` — no other label can be requested this way. Verify rather than assume:
+
+   ```bash
+   gh pr view "$PR_URL" --json labels --jq '.labels[].name'
+   ```
+
+3. **Neither** — ask a human, in one comment, and name it as deferred in the Phase 7 report:
+
+   > @jtomaszewski please apply the `partner-request` label — this is an FSH partner contribution and this account can't set labels here.
+
+   The handle is deliberate and not a placeholder: rung 3 only fires for an account that is neither a collaborator nor in the partner registry, so "mention the right maintainer" is exactly the thing it can't work out on its own. `jtomaszewski` is FSH's Open Mercato partner contact — if that changes, change it here.
+
+On **update**, this overrides "never change labels on update" for this one label: if `partner-request` is absent, run the ladder again. Touch nothing else.
+
 ## Hard rules
 
 1. **Never merge.** No `gh pr merge`, no `--auto`, no `--admin`. This skill hands the PR to the upstream's process and stops.
@@ -179,4 +231,4 @@ Do **not** use `repos/<up>/collaborators/<user>/permission` — it returns **403
 6. **Always fetch the base before computing any diff.** Not theoretical: a month-stale `upstream/<base>` ref makes a 9-file branch look like 2049 files across trees it never touched — enough to trip a restricted-path guardrail that a fresh base clears. Every diff in this skill is against the freshly-fetched ref.
 7. **Respect the PR template verbatim** — no `--fill`.
 8. **Never tick a CLA or legal checkbox on the user's behalf.** Leave it unchecked and name it in the report. Tick only factual boxes you actually verified (e.g. "targets `develop`").
-9. **Don't restate the consuming repo's policy** — read `CONTRIBUTING.md` / the workflow doc / the agent config at runtime. Anything hardcoded here goes stale in a repo you don't own.
+9. **Don't restate the consuming repo's policy** — read `CONTRIBUTING.md` / the workflow doc / the agent config at runtime. Anything hardcoded here goes stale in a repo you don't own. The one exception is [Upstream exceptions](#upstream-exceptions): obligations *FSH* owes a named upstream that the upstream doesn't document, so they can't be read at runtime. Nothing else goes there.
