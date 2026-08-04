@@ -194,8 +194,10 @@ Apply it **after** the PR exists, never via `gh pr create --label`. Take the fir
    ```bash
    ME=$(gh api user --jq .login)
    gh api repos/open-mercato/open-mercato/contents/.github/certified-partners.yml \
-     --jq .content | base64 -d | grep -i -- "$ME"
+     -H 'Accept: application/vnd.github.raw' | grep -i -- "$ME"
    ```
+
+   (The raw `Accept` header skips the base64 hop the contents API otherwise returns — one less decode step, and no `base64 -d` vs `-D` portability trap.)
 
    Read the hit — it must be an entry in a `contributors:` list, not an incidental substring. If listed, post a comment whose **entire body is the command** — the workflow matches `startsWith(body, '/label ')`, so it must be its own comment, never folded into the Phase 6 consolidated comment and never prefixed with prose:
 
