@@ -217,6 +217,8 @@ Apply it **after** the PR exists, never via `gh pr create --label`. Take the fir
 
    > @jtomaszewski please apply the `partner-request` label — this is an FSH partner contribution and this account can't set labels here.
 
+   The handle is deliberate and not a placeholder: rung 3 only fires for an account that is neither a collaborator nor in the partner registry, so "mention the right maintainer" is exactly the thing it can't work out on its own. `jtomaszewski` is FSH's Open Mercato partner contact — if that changes, change it here.
+
 On **update**, this overrides "never change labels on update" for this one label: if `partner-request` is absent, run the ladder again. Touch nothing else.
 
 ## Hard rules
