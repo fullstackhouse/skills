@@ -9,7 +9,7 @@ ship: deliver PRs, hunt bugs and flaky tests, explain changes, report status, an
 |-------|---------|
 | [`explain`](./skills/explain/SKILL.md) | Explain an existing change (working tree / branch / PR / commit) in plain language with a clearly-hedged merge recommendation. Read-only. |
 | [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal. |
-| [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, degrade to a single comment when you lack write access. Never merges. |
+| [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, scrub every client-identifying detail before the first push, target the upstream's real base branch, degrade to a single comment when you lack write access. Never merges. |
 | [`pr-polish`](./skills/pr-polish/SKILL.md) | Rewrite a PR's title/description so they match the branch as it stands and read top-down: problem → fix → details → verification. Verifies every claim (incl. referenced PRs' current state) before writing. Metadata-only. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
@@ -93,6 +93,9 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
 - **baseBranch** — the PR base when it differs from the GitHub default branch
   (default: auto-detected — repo agent config → this profile → CONTRIBUTING/PR template →
   default branch).
+- **confidentialTerms** — client names, former/code names, domains, tenant ids and tracker
+  prefixes that must never appear in anything `upstream-pr` publishes (branch name, commits,
+  diff, PR body, comments). Without it the skill derives candidates and asks before pushing.
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),
