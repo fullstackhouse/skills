@@ -94,8 +94,9 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   (default: auto-detected — repo agent config → this profile → CONTRIBUTING/PR template →
   default branch).
 - **confidentialTerms** — client names, former/code names, domains, tenant ids and tracker
-  prefixes that must never appear in anything `upstream-pr` publishes (branch name, commits,
-  diff, PR body, comments). Without it the skill derives candidates and asks before pushing.
+  prefixes that must never appear in anything `upstream-pr` publishes (branch name, commit
+  messages, commit authors and trailers, diff, fixtures, PR body, comments). Without it the
+  skill derives candidates and asks before pushing.
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),

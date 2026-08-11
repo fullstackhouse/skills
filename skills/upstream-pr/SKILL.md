@@ -197,7 +197,7 @@ Never scrub silently, and never force-push to scrub.
 |---|---|
 | Branch name | Push under a clean one: set `PUSH_BRANCH` and let Phase 5's refspec do the rest. Don't rename the user's local branch. |
 | Commit message / trailer / author, **not yet pushed** | Propose the rewrite, get the user's OK, then `git commit --amend` / `git rebase` (with `--reset-author` or `-c user.email=…` for an identity) before the first push. |
-| Commit message / trailer / author, **already pushed** | Stop. Cleaning it needs a force-push, which hard rule 4 forbids on a live PR. Report it and hand the call to the user — closing the PR and opening a fresh one from a clean branch is usually the answer, and it's theirs to make. |
+| Commit message / trailer / author, **already pushed** | Stop. Cleaning it needs a force-push, which hard rule 4 forbids outright — not merely once a PR exists. Report it and hand the call to the user — closing the PR and opening a fresh one from a clean branch is usually the answer, and it's theirs to make. |
 | Diff content | It's a code change like any other: rename the identifier, generalize the fixture, delete the file — in a **new commit on top**. Re-scan afterwards. |
 | PR title / body / comment | Rewrite before sending. Nothing has been published; this one is free. |
 | The change is client-specific by nature | Stop. There's nothing to scrub — the branch isn't upstreamable as-is. Report which parts would have to be generalized (extract the generic fix, drop the client-specific config) and let the user decide whether that's worth doing. |
