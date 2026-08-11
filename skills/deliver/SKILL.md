@@ -66,8 +66,8 @@ If the branch isn't pushed yet, push with `-u`. If it is, just push.
 gh pr view --json number,url,reviewDecision,reviews,headRefOid 2>/dev/null
 ```
 
-- No PR → `gh pr create --base <default-branch>` with a body that summarises the change and a brief test plan. Title in Conventional Commits style.
-- PR exists → no-op (the push updated it).
+- No PR → `gh pr create --base <default-branch>`. Title in Conventional Commits style stating the plain-language outcome. Write the body top-down per the **pr-polish** skill's structure: context/task line → the problem (observable impact, no code identifiers) → the fix (root cause + what the PR does) → technical details → verification → follow-ups.
+- PR exists → the push updated the code, but check the title/description still tell the truth: if the work drifted since they were written (rebase, review rework, scope change, a referenced PR merged), run the **pr-polish** skill before requesting review — a stale description misleads the reviewer.
 
 Save the PR number to `.context/deliver/pr-number`.
 
