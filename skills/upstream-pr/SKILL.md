@@ -57,6 +57,7 @@ Hard-stop here, *before* pushing anything:
 1. **Base exists** upstream (`git rev-parse --verify "$UPSTREAM_REMOTE/$BASE"` after the fetch).
 2. **Branch ≠ base.**
 3. **Restricted paths.** Diff against the freshly-fetched base (`git diff --name-only "$UPSTREAM_REMOTE/$BASE"...HEAD`) and check it against the trees the repo's CONTRIBUTING marks as off-limits to outside contributions. If the branch touches one, stop and report — a PR that will be closed unmerged is worse than no PR.
+4. **Confidentiality.** Run the [Confidentiality gate](#confidentiality-gate) over the diff and the commit messages. This is the last moment an offending commit message can still be rewritten cheaply.
 
 ### 3. Local checks — only if the branch is unpushed or behind
 
@@ -98,7 +99,7 @@ gh api "repos/$UPSTREAM_SLUG/pulls?state=open&head=$FORK_OWNER:$BRANCH"
     --title "<conventional-commit style>" --body-file .context/upstream-pr/body.md
   ```
 
-  Fill the repo's PR template verbatim — read it and answer its sections. **Never `--fill`**: it discards the template. Open it **ready for review, not as a draft** — a maintainer's first signal should be a PR that's explicitly ready, and a draft may never enter the upstream's review pipeline at all (pipeline labels like `review` typically only apply once it's ready). Pass `--draft` only when the user explicitly asked for one.
+  Fill the repo's PR template verbatim — read it and answer its sections. Re-run the [Confidentiality gate](#confidentiality-gate) over `body.md` before posting: the body is written after Phase 2 scanned, so it is the one surface that scan could not have covered. **Never `--fill`**: it discards the template. Open it **ready for review, not as a draft** — a maintainer's first signal should be a PR that's explicitly ready, and a draft may never enter the upstream's review pipeline at all (pipeline labels like `review` typically only apply once it's ready). Pass `--draft` only when the user explicitly asked for one.
 
   **Never `--label` on create.** Labelling is a write you may not have upstream, and `gh pr create` can fail on it *after* the push — costing you the PR. Labels are applied in Phase 6, once the PR exists and can't be lost.
 
@@ -124,6 +125,7 @@ Final message must include:
 - The four resolved values and where each came from.
 - Your permission level upstream and everything that was consequently **deferred to a maintainer** (labels, assignee, reviewer, QA gate).
 - Any PR-template checkbox left unticked, named explicitly — especially CLA/legal ones.
+- The [Confidentiality gate](#confidentiality-gate) result: the terms scanned for, and anything rewritten because of it.
 - Whether a closed PR for the same head exists.
 - An explicit line that **this skill does not merge** — the PR is handed to the upstream's process.
 
@@ -175,9 +177,48 @@ gh api "repos/$UPSTREAM_SLUG" --jq '.permissions'   # {"admin":false,"maintain":
 
 Do **not** use `repos/<up>/collaborators/<user>/permission` — it returns **403 "Must have push access"** for exactly the read-only accounts that need the fallback path, so it can't be used to detect them.
 
+## Confidentiality gate
+
+Everything this skill publishes — the pushed commits, their messages, the PR title and body, every comment — lands in a repo FSH does not own. Treat all of it as permanently public: edits leave an edit history, and force-pushing is off the table (hard rule #3).
+
+**The rule: no client's non-public details leave FSH.** Clients, their products, repos, environments and internal artifacts are confidential by default — *including when the mention is flattering*. Provenance is the trap: the honest instinct to credit where a pattern was proven ("upstreams the field-proven module from client X") is exactly what writes a client's name into a public diff. Say the engineering claim, drop the address:
+
+> ~~Upstreams the field-proven `acme_telemetry` module from a downstream partner deployment (Acme).~~
+> Upstreams a pattern already running in production in a downstream deployment.
+
+(This file is itself published to a public repo, which is why the example is anonymised — the rule applies to the rule's own documentation.)
+
+Confidential unless independently verified public:
+
+- Client / product / brand names, and the names of their staff.
+- Their repo names, local checkout paths (`~/src/<client>/…`), internal spec or ticket IDs (`SPEC-042`, `ACME-421`), Slack channels, doc URLs.
+- Identifiers that carry the name: module and table prefixes (`acme_telemetry`), env-var prefixes, package scopes, service names.
+- Infrastructure: hostnames, domains, collector/API endpoints, account and bucket IDs.
+- Their data in any form: fixtures, seed data, screenshots, logs, pasted stack traces.
+
+**The exception is narrow**: the client's own project is public (an open-source repo, a published post) *and* the specific detail appears in that public material. Verify it — don't infer it from the client being well known, and don't let one public fact license the rest.
+
+### Scan
+
+Build the term list from what the branch actually drew on: the repo or directory the work was ported from, the sibling client checkouts next to the current one, every proper noun in the diff that isn't the upstream's own, and the identifier prefixes above. Then check every surface against the freshly-fetched base — plus, by eye, any comment you are about to post:
+
+```bash
+TERMS='acme|acmecorp|acme_|ACME-'                                            # case-insensitive alternation
+git diff "$UPSTREAM_REMOTE/$BASE"...HEAD | grep -inE "$TERMS"                # code, docs, specs, fixtures
+git log "$UPSTREAM_REMOTE/$BASE"..HEAD --format='%B' | grep -inE "$TERMS"    # commit messages
+grep -inE "$TERMS" .context/upstream-pr/body.md                              # PR body, before posting
+```
+
+Grep is the floor, not the ceiling — it cannot catch a description that identifies without naming ("the client's booking product", a niche vertical plus a city), so also *read* the prose the branch adds: spec files, READMEs, ADRs, code comments, and your own PR body.
+
+### On a hit
+
+- **Not yet pushed** → rewrite and continue. Rewriting a commit message here means `git commit --amend` or a `git rebase` on an unpublished branch, which is fine — that is precisely why this scan sits in Phase 2 and not after the push.
+- **Already pushed, or already public** → **stop**. Do not force-push to hide it: hard rule #3 stands, and the race is unwinnable anyway — a force-pushed commit stays reachable by SHA on GitHub, and forks, CI logs, notification emails and scrapers may already hold it. Report to the user exactly what leaked and in which surface, and lay out the options that need a human decision: edit the PR body or comment (cheap; the original survives in the edit history), rewrite published history (their call, and their client's), or accept it. Never make that call silently.
+
 ## Upstream exceptions
 
-Named carve-outs, keyed on `UPSTREAM_SLUG`. The bar for an entry is narrow: an obligation **FSH** owes a particular upstream that the *upstream itself doesn't document*, so no runtime read of its `CONTRIBUTING.md` or agent config can discover it. Anything the upstream does document stays out of here — that's hard rule #9.
+Named carve-outs, keyed on `UPSTREAM_SLUG`. The bar for an entry is narrow: an obligation **FSH** owes a particular upstream that the *upstream itself doesn't document*, so no runtime read of its `CONTRIBUTING.md` or agent config can discover it. Anything the upstream does document stays out of here — that's hard rule #10.
 
 ### `open-mercato/open-mercato` — always label `partner-request`
 
@@ -231,4 +272,5 @@ On **update**, this overrides "never change labels on update" for this one label
 6. **Always fetch the base before computing any diff.** Not theoretical: a month-stale `upstream/<base>` ref makes a 9-file branch look like 2049 files across trees it never touched — enough to trip a restricted-path guardrail that a fresh base clears. Every diff in this skill is against the freshly-fetched ref.
 7. **Respect the PR template verbatim** — no `--fill`.
 8. **Never tick a CLA or legal checkbox on the user's behalf.** Leave it unchecked and name it in the report. Tick only factual boxes you actually verified (e.g. "targets `develop`").
-9. **Don't restate the consuming repo's policy** — read `CONTRIBUTING.md` / the workflow doc / the agent config at runtime. Anything hardcoded here goes stale in a repo you don't own. The one exception is [Upstream exceptions](#upstream-exceptions): obligations *FSH* owes a named upstream that the upstream doesn't document, so they can't be read at runtime. Nothing else goes there.
+9. **Never publish a client's non-public details.** Names, repos, internal IDs, infrastructure and data of FSH clients stay inside FSH — in the diff, the commit messages, the PR body and every comment — unless that exact detail is already public in the client's own material. See [Confidentiality gate](#confidentiality-gate). A leak is the one failure here that cannot be undone by a later commit.
+10. **Don't restate the consuming repo's policy** — read `CONTRIBUTING.md` / the workflow doc / the agent config at runtime. Anything hardcoded here goes stale in a repo you don't own. The one exception is [Upstream exceptions](#upstream-exceptions): obligations *FSH* owes a named upstream that the upstream doesn't document, so they can't be read at runtime. Nothing else goes there.

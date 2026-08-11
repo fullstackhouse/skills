@@ -54,6 +54,28 @@ Run the touched packages' checks IN PARALLEL where independent. These are the sa
 
 If any check fails: fix it, re-run, then commit. Keep history clean — squash fixups into the commit they belong to where reasonable.
 
+### 2b. Confidentiality gate — only if this repo is not the sole audience
+
+Establish the audience once:
+
+```bash
+gh repo view --json isPrivate,owner,visibility
+```
+
+The gate fires when the repo is **public**, or when its owner is not the client whose material the branch draws on (an FSH-internal repo, another client's repo, a shared library). It does not fire for a private repo owned by the same client the work is for — there, their own details are in their own house.
+
+When it fires: **no client's non-public details may land in the push.** Names, staff, repo names, local paths (`~/src/<client>/…`), internal spec/ticket IDs, name-carrying identifiers (module and table prefixes, env-var prefixes, service names), infrastructure (hostnames, endpoints, account IDs), and their data (fixtures, seed data, screenshots, logs). This holds *even when the mention is flattering* — crediting where a pattern was proven ("ported from client X's field-tested module") is the most common way a name reaches a public diff. State the engineering claim, drop the address. The only exception is a detail already public in the client's own material, verified rather than assumed.
+
+Scan the diff, the commit messages, and the PR body before they are published:
+
+```bash
+TERMS='acme|acmecorp|acme_|ACME-'                                  # from what the branch drew on
+git diff "$DEFAULT_BRANCH"...HEAD | grep -inE "$TERMS"
+git log "$DEFAULT_BRANCH"..HEAD --format='%B' | grep -inE "$TERMS"
+```
+
+Grep is the floor — also read the prose the branch adds (specs, READMEs, comments). On a hit before pushing: rewrite (amend/rebase is fine, nothing is published yet). On a hit in something already pushed or public: **stop and tell the user** — never force-push to hide it, and never decide alone whether to rewrite published history.
+
 ### 3. Commit & push
 
 Commit any work made during local checks under the same authorship as the branch's existing commits. Use Conventional Commits.
@@ -187,4 +209,5 @@ Final message to the user must include: PR URL, merge status (merged / awaiting-
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. A pre-push gate that takes >2 min defeats the point of front-loading.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
 5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
-6. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
+6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
+7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.

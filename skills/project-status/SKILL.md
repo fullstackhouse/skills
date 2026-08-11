@@ -89,3 +89,4 @@ Output the full draft as the final message, plus: the window covered, item count
 - **Be straight about slips.** A slipped item with a reason builds more trust than omitting it.
 - **Slack mrkdwn**, not markdown: `*bold*`, bullets, no `#` headers, bare links or `<url|label>`. Keep it scannable — the whole status should fit on one screen.
 - Match the audience knob: for a non-technical owner, lead every section with user/business impact.
+- **One client per status.** The channel belongs to one client; nothing about another one goes in it — no name, no comparison ("same approach we used for X"), no borrowed screenshot or metric. Reusable work is described generically ("a pattern we already run in production elsewhere"). The same applies to any FSH-internal detail the client hasn't been shown: rates, staffing, other engagements.
