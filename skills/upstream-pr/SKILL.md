@@ -209,6 +209,8 @@ git log "$UPSTREAM_REMOTE/$BASE"..HEAD --format='%B' | grep -inE "$TERMS"    # c
 grep -inE "$TERMS" .context/upstream-pr/body.md                              # PR body, before posting
 ```
 
+Keep the terms specific — a bare prefix like `gs_` also matches `flags_` and `settings_`, and a scan that cries wolf is a scan the next run skips. Anchor them (`\bgs_`, `-- 'Acme'`) and drop any term that fires on the upstream's own vocabulary.
+
 Grep is the floor, not the ceiling — it cannot catch a description that identifies without naming ("the client's booking product", a niche vertical plus a city), so also *read* the prose the branch adds: spec files, READMEs, ADRs, code comments, and your own PR body.
 
 ### On a hit
