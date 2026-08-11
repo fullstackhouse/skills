@@ -135,6 +135,27 @@ marketplace refresh. To force it immediately:
 
 (New/updated skills take effect in the *next* session, not mid-session.)
 
+## Client confidentiality
+
+Anything a skill publishes outside FSH — a PR to a repo we don't own, a public repo's diff
+and commit messages, a status posted in one client's Slack channel — must carry **no
+non-public detail of any FSH client**: names, staff, repo names, local paths, internal
+spec/ticket IDs, name-carrying identifiers (module or env-var prefixes, service names),
+infrastructure, or their data. The only exception is a detail already public in the client's
+own material, verified rather than assumed.
+
+The trap is provenance. Crediting where a pattern was proven ("upstreams client X's
+field-proven module") reads as generous engineering and leaks a client name into a permanent
+public record; the fix is to keep the engineering claim and drop the address ("upstreams a
+pattern already running in production downstream"). This has happened once, in a public
+upstream PR — hence the gates.
+
+Enforcement lives in the skills that publish: `upstream-pr` (Phase 2 guardrail + Phase 5 body
+re-scan + hard rule), `deliver` (Phase 2b, gated on repo visibility/owner + hard rule),
+`pr-polish` (verification step, incl. leaks inherited from the old body), `project-status`
+(one client per status). Each carries its own copy so a single-skill symlink install still
+enforces it — keep them in sync when editing one.
+
 ## Conventions
 
 - Skills are agent-facing procedures: concise, imperative, with exact commands and
@@ -143,3 +164,5 @@ marketplace refresh. To force it immediately:
 - Bundled `templates/` use `{{PLACEHOLDER}}` tokens the skill substitutes.
 - **Bump `plugin.json` `version` in the same PR as any skill change** (see
   [Releasing](#releasing-bump-the-version--this-is-not-optional)) — CI enforces it.
+- **A skill that publishes anything outside FSH carries the confidentiality gate** (see
+  [Client confidentiality](#client-confidentiality)).

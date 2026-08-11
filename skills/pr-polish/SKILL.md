@@ -29,6 +29,7 @@ The body must describe the PR **as it is now**, not as it was when opened:
 - Update or drop stale dependency notes and delivered "still to come" items; name stacked PRs.
 - Keep only verification claims the commits or CI actually attest to. Never invent test counts, coverage, or benchmarks — if the old body claims something you can't confirm, keep it only if a commit message or CI run backs it.
 - Keep credit for review catches ("caught in review by @x") — one line, where it changed the design.
+- **Confidentiality.** If the repo is public or isn't owned by the client whose material the PR draws on, the body must name no client of FSH, no client repo or local path, no internal spec/ticket ID, no name-carrying identifier (module or env-var prefix, service name), no host or endpoint of theirs — unless that exact detail is already public in the client's own material. Provenance is where this slips: "upstreams client X's field-proven module" credits honestly and leaks anyway. Rewrite it to the engineering claim ("upstreams a pattern already running in production downstream"). This applies to what you *keep* as much as what you write — a leak inherited from the old body is still yours once you re-post it; strip it, and say in the report that you did and where else it may survive (commit messages, the diff, earlier comments), since those are outside this skill's reach.
 
 ## 4. Structure — general to specific
 

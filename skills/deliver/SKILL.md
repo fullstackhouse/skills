@@ -14,8 +14,10 @@ CI is slow and every avoidable push is a real cost — front-load all checks loc
 This skill is repo-agnostic. The concrete commands, reviewer, and merge policy come from the repository you're running in. Before Phase 1, gather:
 
 - **Check commands per package** — how to lint / typecheck / test / run codegen for each workspace. Derive from the repo's `CLAUDE.md` / `AGENTS.md`, per-package docs, and `package.json` (`scripts`) / `Makefile` / `justfile`. If the repo has a **`## Skill profile`** section in its root `CLAUDE.md`, use that — it's the curated source.
-- **Repo slug** — `gh repo view --json nameWithOwner -q .nameWithOwner`.
-- **Default branch** — `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`.
+- **Repo identity** — one call covers slug, default branch, and the audience the Phase 2b gate keys on:
+  ```bash
+  gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
+  ```
 - **PR reviewer bot** — from the `## Skill profile` (`reviewer`), default `copilot-pull-request-reviewer`.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
@@ -53,6 +55,22 @@ Run the touched packages' checks IN PARALLEL where independent. These are the sa
 - **Infra** (if touched) — format + validate the changed config (e.g. `tofu fmt`/`tofu validate`). Never `apply` from this skill.
 
 If any check fails: fix it, re-run, then commit. Keep history clean — squash fixups into the commit they belong to where reasonable.
+
+### 2b. Confidentiality gate — only if this repo is not the sole audience
+
+The audience came from the Phase 0 `gh repo view` — no extra call. The gate fires when the repo is **public**, or when its owner is not the client whose material the branch draws on (an FSH-internal repo, another client's repo, a shared library). It does not fire for a private repo owned by the same client the work is for — there, their own details are in their own house.
+
+When it fires: **no client's non-public details may land in the push.** Names, staff, repo names, local paths (`~/src/<client>/…`), internal spec/ticket IDs, name-carrying identifiers (module and table prefixes, env-var prefixes, service names), infrastructure (hostnames, endpoints, account IDs), and their data (fixtures, seed data, screenshots, logs). This holds *even when the mention is flattering* — crediting where a pattern was proven ("ported from client X's field-tested module") is the most common way a name reaches a public diff. State the engineering claim, drop the address. The only exception is a detail already public in the client's own material, verified rather than assumed.
+
+Scan the diff, the commit messages, and the PR body before they are published:
+
+```bash
+TERMS='acme|acmecorp|acme_|ACME-'                                  # from what the branch drew on
+git diff "$DEFAULT_BRANCH"...HEAD | grep -inE "$TERMS"
+git log "$DEFAULT_BRANCH"..HEAD --format='%B' | grep -inE "$TERMS"
+```
+
+Grep is the floor — also read the prose the branch adds (specs, READMEs, comments). On a hit before pushing: rewrite (amend/rebase is fine, nothing is published yet). On a hit in something already pushed or public: **stop and tell the user** — never force-push to hide it, and never decide alone whether to rewrite published history.
 
 ### 3. Commit & push
 
@@ -187,4 +205,5 @@ Final message to the user must include: PR URL, merge status (merged / awaiting-
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. A pre-push gate that takes >2 min defeats the point of front-loading.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
 5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
-6. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
+6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
+7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
