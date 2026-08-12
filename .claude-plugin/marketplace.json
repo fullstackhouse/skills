@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "fullstackhouse-skills",
-  "description": "Full Stack House Claude Code skills (delivery workflow, bug/flake hunting, change explanation, status reporting, design)",
+  "description": "Full Stack House Claude Code skills (delivery workflow, bug/flake hunting, change explanation, status reporting, design, document redlines)",
   "owner": {
     "name": "Full Stack House",
     "url": "https://fullstack.house"
