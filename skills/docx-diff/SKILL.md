@@ -44,6 +44,8 @@ python3 scripts/docx-diff.py --abbr 'No,Sec,Art,cf,e.g,i.e,etc,vs,Inc,Ltd' ours.
 
 Store the result next to the source documents, with a short prose header above the first `---` line: what the two versions are, their dates, and the exact command to regenerate. A bare `.diff` six weeks later is unreadable.
 
+**Confidentiality.** The diff is verbatim contract text belonging to two parties, and a `.diff` is far easier to commit carelessly than a `.docx`. It goes only where the source documents already live — a private repo or folder of the party that owns them. Never into a public repo, a repo owned by anyone else, or a channel/thread that includes a third party. If you can't confirm the destination's visibility and owner, write the diff to a local path and ask.
+
 ## 3. Read the diff — this is the actual work
 
 Walk every hunk and sort it into one of two buckets:
