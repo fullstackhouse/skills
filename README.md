@@ -1,7 +1,8 @@
 # fullstackhouse/skills
 
 Full Stack House's collection of Claude Code skills — the agent workflow we actually use to
-ship: deliver PRs, hunt bugs and flaky tests, explain changes, report status, and polish UI.
+ship: deliver PRs, hunt bugs and flaky tests, explain changes, report status, polish UI, and
+read what a counterparty changed in a contract.
 
 ## Skills
 
@@ -16,6 +17,7 @@ ship: deliver PRs, hunt bugs and flaky tests, explain changes, report status, an
 | [`project-status`](./skills/project-status/SKILL.md) | Draft a project status update for the project's Slack channel: gather Linear/Notion + GitHub activity since the last status, reconcile the roadmap with reality, draft progress / blockers / what's next. Never posts without approval. |
 | [`design-polish`](./skills/design-polish/SKILL.md) | Audit and improve a web app/prototype's visual design and UX (Refactoring UI + UX heuristics): screenshot via Playwright → prioritized audit → targeted fixes reusing design tokens → re-screenshot to verify. |
 | [`design-explore`](./skills/design-explore/SKILL.md) | Divergent counterpart to `design-polish`: build ~3 structurally different working alternatives of a screen with the existing design system, screenshot them side by side, present trade-offs + a recommendation, and let the user pick. |
+| [`docx-diff`](./skills/docx-diff/SKILL.md) | Reconstruct a redline between two `.docx` versions when the counterparty edited without tracked changes: pandoc → sentence-level unified diff → a classification of which changes are material and who they favour. Needs `pandoc`. |
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 
 `explain`, `deliver`, `upstream-pr`, `pr-polish`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
