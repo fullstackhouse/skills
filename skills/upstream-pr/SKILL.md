@@ -1,11 +1,11 @@
 ---
 name: upstream-pr
-description: Open or update a cross-repository (fork) pull request — push the current branch to the fork remote, target the upstream repo's real base branch, respect the upstream's label/QA policy, and degrade gracefully when you lack write access there. Use when contributing to a repo you don't own, or whenever the invocation mentions a fork/upstream remote ("make an upstream PR via the X remote"). Never merges.
+description: Open or update a cross-repository (fork) pull request — push the current branch to the fork remote, target the upstream repo's real base branch, respect the upstream's label/QA policy, close any now-duplicate PR inside the fork as superseded, and degrade gracefully when you lack write access there. Use when contributing to a repo you don't own, or whenever the invocation mentions a fork/upstream remote ("make an upstream PR via the X remote"). Never merges.
 ---
 
 # upstream-pr
 
-You are running the **upstream-pr** skill. Goal: get the current branch reviewed upstream — pushed to the fork you can write to, opened against the upstream's real base branch, with the upstream's own PR policy applied as far as your permissions allow.
+You are running the **upstream-pr** skill. Goal: get the current branch reviewed upstream — pushed to the fork you can write to, opened against the upstream's real base branch, with the upstream's own PR policy applied as far as your permissions allow, and any now-duplicate PR inside the fork retired in favour of it.
 
 Contributing from a fork is a **triangle**: commits go to one repo (the fork), review happens in another (the upstream). Almost every `git` and `gh` default assumes a single repo, so all four coordinates — fork remote, upstream slug, base branch, permission level — must be resolved explicitly, and *shown to the user before anything mutating*. Each one has a cheap, silent failure mode: a bare `git push` that hits a repo you shouldn't write to, or a PR opened against the GitHub default branch when the project actually merges into another one.
 
@@ -117,13 +117,53 @@ Then, on **both** paths, apply any entry in [Upstream exceptions](#upstream-exce
 
 The "exactly one" rule above bounds *metadata-intent* comments only. An exception may require its own standalone comment (a slash command has to be the whole body to be parsed) — post it, and never suppress it to satisfy the one-comment rule.
 
-### 7. Report
+### 7. Retire the superseded fork PR
+
+A branch that reaches upstream has often already been opened as a PR **inside the fork** — internal review via the sibling `deliver` skill, or a placeholder from before upstream access was sorted out. Once the upstream PR exists, that one is duplicate review surface: two comment threads on one diff, and a PR that can't be the thing that merges the change into the product.
+
+Find it — open, in the fork, **head** equal to this branch:
+
+```bash
+gh api "repos/$FORK_SLUG/pulls?state=open&head=$FORK_OWNER:$BRANCH" \
+  --jq '.[] | {number, base: .base.ref, url: .html_url}'
+```
+
+Head only. A PR whose *base* is this branch is stacked work — someone else's branch merging into yours — and closing it throws away their review. Nothing open → skip this phase silently, no report line needed.
+
+Otherwise, before closing anything, check that the fork PR is genuinely redundant. It is only redundant if the fork's base branch is a **mirror** of the upstream's, so the change comes back down when the fork syncs. If the fork's base carries commits of its own, the fork is a product line rather than a mirror, and merging upstream does *not* deliver the change there — the fork PR is the only path that does. With `FORK_BASE` from the `base` field above:
+
+```bash
+git fetch "$FORK_REMOTE" "$FORK_BASE"
+git merge-base --is-ancestor "$FORK_REMOTE/$FORK_BASE" "$UPSTREAM_REMOTE/$BASE" && echo mirror || echo diverged
+```
+
+- **mirror** → close it, with the note.
+- **diverged** → leave it open and say why in the report. Never close it "to tidy up".
+
+The check is deliberately one-sided: a fork that syncs by merge commit rather than fast-forward reads as `diverged` and keeps its PR open. A wrong `diverged` costs a stale PR; a wrong `mirror` costs the change.
+
+Close and explain in one call — a separate `gh pr comment` plus `gh pr close` can leave the PR closed with no explanation if the second half fails:
+
+```bash
+gh pr close "$FORK_PR_URL" --comment "Superseded by $UPSTREAM_PR_URL — this change is now under review upstream. Branch \`$BRANCH\` stays as-is: it is the head of that PR."
+```
+
+**Never pass `--delete-branch`.** The fork branch *is* the upstream PR's head — deleting it closes the PR you just opened and takes its diff with it. Nothing in this phase touches the branch.
+
+If the close fails for lack of write access on the fork (possible when `FORK_REMOTE` is someone else's fork you were merely given a push ref to), post the comment on its own and name the close as deferred in the report.
+
+The fork of a public upstream is public too, so the closing comment goes through the [Confidentiality gate](#confidentiality-gate) like everything else. The template above carries only URLs — keep it that way; internal review context does not belong in it.
+
+On **update** (the upstream PR already existed), run this phase anyway: a fork PR can be opened after the upstream one.
+
+### 8. Report
 
 Final message must include:
 
 - The PR URL, and whether it was **created** or **updated**.
 - The four resolved values and where each came from.
 - Your permission level upstream and everything that was consequently **deferred to a maintainer** (labels, assignee, reviewer, QA gate).
+- The fork PR closed as superseded, if any — or the one left open, with the `diverged` reason.
 - Any PR-template checkbox left unticked, named explicitly — especially CLA/legal ones.
 - The [Confidentiality gate](#confidentiality-gate) result: the terms scanned for, and anything rewritten because of it.
 - Whether a closed PR for the same head exists.
@@ -256,7 +296,7 @@ Apply it **after** the PR exists, never via `gh pr create --label`. Take the fir
    gh pr view "$PR_URL" --json labels --jq '.labels[].name'
    ```
 
-3. **Neither** — ask a human, in one comment, and name it as deferred in the Phase 7 report:
+3. **Neither** — ask a human, in one comment, and name it as deferred in the Phase 8 report:
 
    > @jtomaszewski please apply the `partner-request` label — this is an FSH partner contribution and this account can't set labels here.
 
@@ -276,3 +316,4 @@ On **update**, this overrides "never change labels on update" for this one label
 8. **Never tick a CLA or legal checkbox on the user's behalf.** Leave it unchecked and name it in the report. Tick only factual boxes you actually verified (e.g. "targets `develop`").
 9. **Never publish a client's non-public details.** Names, repos, internal IDs, infrastructure and data of FSH clients stay inside FSH — in the diff, the commit messages, the PR body and every comment — unless that exact detail is already public in the client's own material. See [Confidentiality gate](#confidentiality-gate). A leak is the one failure here that cannot be undone by a later commit.
 10. **Don't restate the consuming repo's policy** — read `CONTRIBUTING.md` / the workflow doc / the agent config at runtime. Anything hardcoded here goes stale in a repo you don't own. The one exception is [Upstream exceptions](#upstream-exceptions): obligations *FSH* owes a named upstream that the upstream doesn't document, so they can't be read at runtime. Nothing else goes there.
+11. **Never delete a branch, and never close a PR you haven't proved redundant.** No `--delete-branch` on `gh pr close`, no `git push --delete`: the fork branch is the upstream PR's head. The only PR this skill may close is an open fork PR whose *head* is this branch **and** whose base cleared the Phase 7 mirror check. The upstream PR is never closed.
