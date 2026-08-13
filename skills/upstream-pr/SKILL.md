@@ -50,6 +50,34 @@ Then fetch the base — everything downstream depends on it being current:
 git fetch "$UPSTREAM_REMOTE" "$BASE"
 ```
 
+Then bring **the fork's own copy of `$BASE`** up to date. Nothing else in the flow updates it: it is
+a mirror nobody commits to, so it drifts silently, and the next branch cut from it opens a fork PR
+whose diff carries other contributors' commits as if they were the author's. The reviewer meets them
+first, on a PR this skill never sees — so this is the only step in the triangle positioned to prevent
+it, one branch ahead.
+
+```bash
+gh api "repos/$UPSTREAM_SLUG/compare/$BASE...${FORK_SLUG%%/*}:$BASE" --jq '.status, .behind_by'
+```
+
+- `identical` → say nothing and move on.
+- `behind` → fast-forward it, and report how many commits it moved:
+
+  ```bash
+  gh repo sync "$FORK_SLUG" --branch "$BASE"
+  ```
+
+  No `--source` is needed: it defaults to the destination's parent, which is where the upstream slug
+  was resolved from in the first place.
+
+- `ahead` or `diverged` → **stop and ask.** The fork's base carries commits the upstream doesn't, so
+  it is no longer a mirror and `gh repo sync` would need `--force` to land. Never pass it: that
+  rewrites a branch other people's open PRs are based on.
+
+A sync that fails for lack of permission is not fatal — print the command and carry on. *This* PR is
+diffed against the upstream ref fetched above, so a stale fork base cannot corrupt it; the cost falls
+on the next branch.
+
 ### 2. Guardrail checks
 
 Hard-stop here, *before* pushing anything:
@@ -162,6 +190,7 @@ Final message must include:
 
 - The PR URL, and whether it was **created** or **updated**.
 - The four resolved values and where each came from.
+- Whether the fork's base branch was fast-forwarded, by how many commits — or why it wasn't.
 - Your permission level upstream and everything that was consequently **deferred to a maintainer** (labels, assignee, reviewer, QA gate).
 - The fork PR closed as superseded, if any — or the one left open, with the `diverged` reason.
 - Any PR-template checkbox left unticked, named explicitly — especially CLA/legal ones.
@@ -310,7 +339,7 @@ On **update**, this overrides "never change labels on update" for this one label
 1. **Never merge.** No `gh pr merge`, no `--auto`, no `--admin`. This skill hands the PR to the upstream's process and stops.
 2. **Never push to the upstream remote**, and never to a default or protected branch on any remote.
 3. **Never force-push.** A fork PR's history is a maintainer's review context.
-4. **Never mutate the user's git setup** — no `gh repo fork`, no `git remote add`, no `git config` writes, no `push -u`. Print the command and let them run it.
+4. **Never mutate the user's git setup** — no `gh repo fork`, no `git remote add`, no `git config` writes, no `push -u`. Print the command and let them run it. Fast-forwarding the fork's own base branch (Phase 1) is not covered by this rule: mirroring the upstream is what that branch is for, and the step is fast-forward-only.
 5. **Never `--no-verify`, never `--no-gpg-sign`.** Fix the hook's root cause.
 6. **Always fetch the base before computing any diff.** Not theoretical: a month-stale `upstream/<base>` ref makes a 9-file branch look like 2049 files across trees it never touched — enough to trip a restricted-path guardrail that a fresh base clears. Every diff in this skill is against the freshly-fetched ref.
 7. **Respect the PR template verbatim** — no `--fill`.
