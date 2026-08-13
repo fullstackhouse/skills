@@ -145,14 +145,14 @@ The check is deliberately one-sided: a fork that syncs by merge commit rather th
 Close and explain in one call — a separate `gh pr comment` plus `gh pr close` can leave the PR closed with no explanation if the second half fails:
 
 ```bash
-gh pr close "$FORK_PR_URL" --comment "Superseded by $UPSTREAM_PR_URL — this change is now under review upstream. Branch \`$BRANCH\` stays as-is: it is the head of that PR."
+gh pr close "$FORK_PR_URL" --comment "Superseded by $UPSTREAM_PR_URL — this change is now under review upstream. Branch \`$BRANCH\` is left in place because it is the head of that upstream PR; deleting it would close the PR."
 ```
 
 **Never pass `--delete-branch`.** The fork branch *is* the upstream PR's head — deleting it closes the PR you just opened and takes its diff with it. Nothing in this phase touches the branch.
 
 If the close fails for lack of write access on the fork (possible when `FORK_REMOTE` is someone else's fork you were merely given a push ref to), post the comment on its own and name the close as deferred in the report.
 
-The fork of a public upstream is public too, so the closing comment goes through the [Confidentiality gate](#confidentiality-gate) like everything else. The template above carries only URLs — keep it that way; internal review context does not belong in it.
+The fork of a public upstream is public too, so the closing comment goes through the [Confidentiality gate](#confidentiality-gate) like everything else. The template above adds nothing that isn't already published by this point — the upstream PR's URL, and a branch name that is that PR's head — so keep it to those two. Internal review context (why the fork PR was opened, what came up on it, who asked for what) does not belong in it. If the *branch name itself* trips the gate, that leaked at Phase 4 and the comment is not where you fix it: report it under [On a hit](#on-a-hit).
 
 On **update** (the upstream PR already existed), run this phase anyway: a fork PR can be opened after the upstream one.
 
@@ -247,6 +247,7 @@ TERMS='acme|acmecorp|acme_|ACME-'                                            # c
 git diff "$UPSTREAM_REMOTE/$BASE"...HEAD | grep -inE "$TERMS"                # code, docs, specs, fixtures
 git log "$UPSTREAM_REMOTE/$BASE"..HEAD --format='%B' | grep -inE "$TERMS"    # commit messages
 grep -inE "$TERMS" .context/upstream-pr/body.md                              # PR body, before posting
+echo "$BRANCH" | grep -inE "$TERMS"                                          # branch name — the Phase 4 push publishes it
 ```
 
 Keep the terms specific — a bare prefix like `gs_` also matches `flags_` and `settings_`, and a scan that cries wolf is a scan the next run skips. Anchor them (`\bgs_`, `-- 'Acme'`) and drop any term that fires on the upstream's own vocabulary.
