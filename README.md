@@ -168,3 +168,6 @@ enforces it — keep them in sync when editing one.
   [Releasing](#releasing-bump-the-version--this-is-not-optional)) — CI enforces it.
 - **A skill that publishes anything outside FSH carries the confidentiality gate** (see
   [Client confidentiality](#client-confidentiality)).
+
+The same rules, in the form an agent reads before editing: [`AGENTS.md`](./AGENTS.md)
+(`CLAUDE.md` imports it).
