@@ -21,6 +21,7 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
 - **PR reviewer bot** — from the `## Skill profile` (`reviewer`), default `copilot-pull-request-reviewer`.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
+- **Tracker + its status vocabulary** — from the `## Skill profile` (`tracker`). If the repo documents which states mean *in progress*, *in review* and *done*, this skill moves the task along with the PR (Phases 4b and 8b). If it documents a tracker but no vocabulary, don't guess at state names — report the task's current state in Phase 9 instead.
 
 If a needed value isn't documented and you can't infer it, ask the user rather than guessing.
 
@@ -88,6 +89,18 @@ gh pr view --json number,url,reviewDecision,reviews,headRefOid 2>/dev/null
 - PR exists → the push updated the code, but check the title/description still tell the truth: if the work drifted since they were written (rebase, review rework, scope change, a referenced PR merged), run the **pr-polish** skill before requesting review — a stale description misleads the reviewer.
 
 Save the PR number to `.context/deliver/pr-number`.
+
+### 4b. Tracker — the work is now up for review
+
+Skip entirely if the repo documents no tracker vocabulary (see Project specifics).
+
+Resolve the task from the PR body's task line — the repo's own convention (`Closes X` / `Part of X` / `Relates to X`). Then, in one fetch of that task:
+
+- **Assigned to someone other than the user you're working for → touch nothing.** Report it in Phase 9. You don't know what that person is doing with it.
+- Still in a *not started* state → move it to *in progress*, then to *in review*. A pushed branch with a PR is unambiguously both; there's no point recording only the later one.
+- Already in *in review* or a terminal state → leave it.
+
+Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work wider than this PR — leave those alone at every phase.
 
 ### 5. Request reviewer
 
@@ -194,9 +207,17 @@ Use `--admin` **only** when the `## Skill profile` says `ownerCanSelfMerge: true
 
 If the condition doesn't hold (substantial new code, failing checks, unresolved threads, or no review yet) → don't merge. Surface the state to the user and stop.
 
+### 8b. Tracker — close the task
+
+Only once the merge has actually succeeded, and only for the task named by `Closes`: move it to the *done* state. Same guard as 4b — never a task assigned to someone else.
+
+If the PR only says `Part of` / `Relates to`, or the merge didn't happen, leave the task where 4b put it and say so in Phase 9. Never set an *abandoned* / *cancelled* / *won't do* state from this skill; that's a human judgement, not a consequence of a merge.
+
+Acceptance criteria the merge can't prove (something observable only in a deployed environment) are yours to check *before* moving the task, not to assume. If you can't check them, leave the task in review and say what's outstanding.
+
 ### 9. Report
 
-Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked), the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 
@@ -207,3 +228,4 @@ Final message to the user must include: PR URL, merge status (merged / awaiting-
 5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
+8. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
