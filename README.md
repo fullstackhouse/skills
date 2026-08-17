@@ -12,6 +12,7 @@ read what a counterparty changed in a contract.
 | [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal. |
 | [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, close a now-duplicate fork PR as superseded, degrade to a single comment when you lack write access. Never merges. |
 | [`pr-polish`](./skills/pr-polish/SKILL.md) | Rewrite a PR's title/description so they match the branch as it stands and read top-down: problem → fix → details → verification. Verifies every claim (incl. referenced PRs' current state) before writing. Metadata-only. |
+| [`review-queue`](./skills/review-queue/SKILL.md) | Triage every PR awaiting your review: classify the queue, fan out one read-only reviewer subagent per PR, merge into a linked triage table (verdicts, draft comments, cross-PR conflicts). Posts nothing without explicit per-action approval. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
 | [`project-status`](./skills/project-status/SKILL.md) | Draft a project status update for the project's Slack channel: gather Linear/Notion + GitHub activity since the last status, reconcile the roadmap with reality, draft progress / blockers / what's next. Never posts without approval. |
@@ -20,7 +21,7 @@ read what a counterparty changed in a contract.
 | [`docx-diff`](./skills/docx-diff/SKILL.md) | Reconstruct a redline between two `.docx` versions when the counterparty edited without tracked changes: pandoc → sentence-level unified diff → a classification of which changes are material and who they favour. Needs `pandoc`. |
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 
-`explain`, `deliver`, `upstream-pr`, `pr-polish`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `deliver`, `upstream-pr`, `pr-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -89,6 +90,9 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   (URL + data-source/collection id), a Linear project, or GitHub issues, plus default
   status / priority / tags.
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
+- **Review landmines** (`review-queue`) — standing repo-specific checks every PR reviewer
+  agent must apply (perf-sensitive paths, known CI false-fails, encryption/tenancy rules),
+  plus the scratch dir for triage reports (default `.context/pr-review/` when present).
 - **ownerCanSelfMerge** — whether `deliver` may `gh pr merge --admin` (default: no).
 - **forkRemote** — the remote `upstream-pr` pushes to when contributing from a fork
   (default: auto-detected from the branch's remote / `@{push}` / remote classification).
