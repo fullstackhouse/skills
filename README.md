@@ -86,9 +86,11 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
 - **Packages → check commands** — how to lint / typecheck / test / run codegen per workspace.
 - **Single e2e spec command** + Playwright project root and any worker constraints
   (e.g. local must run `workers=1`).
-- **Give-up tracker** — where `bug-hunt` / `flake-hunt` file a task: a Notion database
+- **Tracker** — where `bug-hunt` / `flake-hunt` file a give-up task: a Notion database
   (URL + data-source/collection id), a Linear project, or GitHub issues, plus default
-  status / priority / tags.
+  status / priority / tags. Name the **status vocabulary** too — which states mean *in
+  progress*, *in review*, *done* — and `deliver` moves the PR's task along with the PR.
+  Without it `deliver` reports the task's state instead of guessing at state names.
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
 - **Review landmines** (`review-queue`) — standing repo-specific checks every PR reviewer
   agent must apply (perf-sensitive paths, known CI false-fails, encryption/tenancy rules),
