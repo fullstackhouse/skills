@@ -12,7 +12,7 @@ read what a counterparty changed in a contract.
 | [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal. |
 | [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, close a now-duplicate fork PR as superseded, degrade to a single comment when you lack write access. Never merges. |
 | [`pr-polish`](./skills/pr-polish/SKILL.md) | Rewrite a PR's title/description so they match the branch as it stands and read top-down: problem → fix → details → verification. Verifies every claim (incl. referenced PRs' current state) before writing. Metadata-only. |
-| [`ticket-refresh`](./skills/ticket-refresh/SKILL.md) | `pr-polish` for a tracker ticket: re-verify its body against reality — resolve every linked PR/issue (following supersessions), check whether an "upstream" fix already ships in the installed version, and rewrite claims the world has overtaken. Body only; never touches Status/Assignee. |
+| [`ticket-refresh`](./skills/ticket-refresh/SKILL.md) | `pr-polish` for a tracker ticket: re-verify its body against reality — resolve every linked PR/issue (following supersessions), check whether an "upstream" fix already ships in the installed version, and rewrite claims the world has overtaken, then post one comment so watchers learn what changed. Body + comment only; never touches Status/Assignee. |
 | [`review-queue`](./skills/review-queue/SKILL.md) | Triage every PR awaiting your review: classify the queue, fan out one read-only reviewer subagent per PR, merge into a linked triage table (verdicts, draft comments, cross-PR conflicts). Posts nothing without explicit per-action approval. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
@@ -92,8 +92,10 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   status / priority / tags. Name the **status vocabulary** too — which states mean *in
   progress*, *in review*, *done* — and `deliver` moves the PR's task along with the PR.
   Without it `deliver` reports the task's state instead of guessing at state names.
-  `ticket-refresh` reads the same knob to find and rewrite a ticket's body, but never
-  moves its status.
+  `ticket-refresh` reads the same knob to find and rewrite a ticket's body, and to post
+  the comment recording that rewrite — but never moves its status. Say if the tracker's
+  comments are unusable (no API, or nobody reads them); the skill skips the comment
+  rather than folding the narration back into the body.
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
 - **Review landmines** (`review-queue`) — standing repo-specific checks every PR reviewer
   agent must apply (perf-sensitive paths, known CI false-fails, encryption/tenancy rules),
