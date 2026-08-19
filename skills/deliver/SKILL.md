@@ -18,7 +18,8 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
   ```
-- **PR reviewer bot** — from the `## Skill profile` (`reviewer`). Copilot needs two names, not one: `@copilot` to request it, `copilot-pull-request-reviewer` to recognise its reviews (see Phase 5).
+- **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular). It sets *both* of the names Phase 5 needs — the one to request and the one reviews are authored by — because a bot's own login is accepted by `gh pr edit` as well as its alias. Unset, Phase 5 defaults to Copilot (`@copilot` / `copilot-pull-request-reviewer`).
+- **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to fall back to when no bot review arrives (Phase 5). Unset, Phase 5 derives a candidate from recent merged PRs.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
 - **Tracker + its status vocabulary** — from the `## Skill profile` (`tracker`). If the repo documents which states mean *in progress*, *in review* and *done*, this skill moves the task along with the PR (Phases 4b and 8b). If it documents a tracker but no vocabulary, don't guess at state names — report the task's current state in Phase 9 instead.
@@ -112,7 +113,7 @@ REVIEWER=${PROFILE_REVIEWER:-@copilot}                          # what to reques
 REVIEWER_AUTHOR=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # what reviews are authored by
 ```
 
-`PROFILE_REVIEWER` is the `## Skill profile` `reviewer` knob, unset when the repo documents none. **A configured value replaces both names**, which works because a bot's own login is accepted by `gh pr edit` as well as its alias — so a repo running a different reviewer bot gets it requested *and* recognised, rather than Copilot requested and its own bot polled for.
+`PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. **A configured value replaces both names**, which works because a bot's own login is accepted by `gh pr edit` as well as its alias — so a repo running a different reviewer bot gets it requested *and* recognised, rather than Copilot requested and its own bot polled for. (Not to be confused with **`reviewers`**, plural, which is the human fallback list below.)
 
 **Why two variables and not one:** Copilot answers to a different name in each API. Measured on `gh` 2.95.0 against a repo where the bot works:
 
@@ -145,13 +146,23 @@ The success signal is a review arriving, not a request being visible — and Pha
 
 **A failed request is not a missing review.** Many repos have Copilot reviewing automatically on open, with no request from anyone. So report the failure, keep polling, and only when Phase 6 times out with no bot review fall back to humans:
 
+Use `reviewers` from the `## Skill profile` when the repo sets it. Otherwise derive a candidate — and **then actually request them**, which is the step whose absence started this whole phase:
+
 ```bash
 AUTHOR=$(gh pr view <N> --json author --jq .author.login)
-gh pr list --state merged --limit 20 --json reviews \
-  --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER_AUTHOR\")) | group_by(.) | max_by(length)[0]"
+HUMAN=$(gh pr list --state merged --limit 20 --json reviews \
+  --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER_AUTHOR\")) | group_by(.) | max_by(length)[0] // empty")
+
+if [ -n "$HUMAN" ]; then
+  gh pr edit <N> --add-reviewer "$HUMAN"
+else
+  : # no candidate — report it and ask the user who should review; do not guess
+fi
 ```
 
-**No candidate → stop and ask.** `max_by(length)[0]` returns `null` on an empty list and exits 0, so an unguarded run would request a reviewer literally named `null` — a young repo, or one whose only reviewers so far are the author and the bot, hits this. Excluding the author is not cosmetic either: whoever runs this skill is usually the PR's author, and requesting the author returns `422 Review cannot be requested from pull request author` — failing in the same silent shape as the bug this phase exists to prevent. Prefer `reviewers` from the `## Skill profile` when it is set; the query above is the fallback's fallback. Never treat "no bot review" as "no review needed".
+`// empty` rather than a bare `max_by(length)[0]`: on an empty candidate list that expression returns `null` and exits 0, so an unguarded run would request a reviewer literally named `null`. A young repo with no merged PRs, or one whose only reviewers so far are the author and the bot, hits this — and the failure would be silent, in the same shape as the bug this phase exists to prevent.
+
+Excluding the author is not cosmetic either: whoever runs this skill is usually the PR's author, and requesting the author returns `422 Review cannot be requested from pull request author`. Never treat "no bot review" as "no review needed".
 
 ### 6. Wait for the review
 
