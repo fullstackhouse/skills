@@ -18,7 +18,8 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
   ```
-- **PR reviewer bot** — from the `## Skill profile` (`reviewer`), default `copilot-pull-request-reviewer`.
+- **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular), which must be the bot's **login** (`copilot-pull-request-reviewer`, the default) and not an alias like `@copilot`. One value covers requesting and recognising: `gh pr edit` accepts a login, and `.author.login` is what a review carries.
+- **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to fall back to when no bot review arrives (Phase 5). Unset, Phase 5 derives a candidate from recent merged PRs.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
 - **Tracker + its status vocabulary** — from the `## Skill profile` (`tracker`). If the repo documents which states mean *in progress*, *in review* and *done*, this skill moves the task along with the PR (Phases 4b and 8b). If it documents a tracker but no vocabulary, don't guess at state names — report the task's current state in Phase 9 instead.
@@ -104,34 +105,80 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 
 ### 5. Request reviewer
 
-`SLUG=$(gh repo view --json nameWithOwner -q .nameWithOwner)`, `REVIEWER` = the configured bot (default `copilot-pull-request-reviewer`). Determine state first:
+Assign both up front — an unset variable interpolates to `""`, which matches no review and fails exactly the silent-empty way this phase exists to prevent:
 
 ```bash
-gh pr view <N> --json reviews --jq ".reviews[] | select(.author.login == \"Copilot\" or .author.login == \"$REVIEWER\")"
+SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
 ```
 
-- **No prior review by the bot** → request one:
-  ```bash
-  gh pr edit <N> --add-reviewer "$REVIEWER"
-  ```
-  If that errors with "not a collaborator", fall back to:
-  ```bash
-  gh api -X POST "repos/$SLUG/pulls/<N>/requested_reviewers" -f "reviewers[]=$REVIEWER"
-  ```
-- **Prior review exists** → request a re-review (re-requesting a reviewer who already reviewed triggers a fresh review against the new HEAD):
-  ```bash
-  gh api -X POST "repos/$SLUG/pulls/<N>/requested_reviewers" -f "reviewers[]=$REVIEWER"
-  ```
+`PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. One value serves both roles because `gh pr edit --add-reviewer` accepts a bot's **login**, not only its alias.
+
+**Set it to the login, never an alias.** `@copilot` is accepted by `gh pr edit` and is what GitHub's own docs show — but reviews are authored by `copilot-pull-request-reviewer`, and `.author.login` never carries a leading `@`. A profile saying `reviewer: @somebot` would request correctly and then match nothing, timing out on a review that had already arrived. If a bot's alias and login differ and you must request by alias, the two roles genuinely need two values — say so in the profile rather than letting one silently half-work.
+
+(Not to be confused with **`reviewers`**, plural, which is the human fallback list below.)
+
+**Why the login and not the alias:** Copilot answers to a different name in each API, and only one of them is what a review is authored by. Measured on `gh` 2.95.0 against a repo where the bot works:
+
+| Name | `gh pr edit --add-reviewer` | REST `POST .../requested_reviewers` | authors reviews as |
+|---|---|---|---|
+| `@copilot` | ✅ lands (documented alias) | — | — |
+| `copilot-pull-request-reviewer` | ✅ lands | ❌ `422 … not a collaborator` | ✅ |
+| `Copilot` | ❌ `Could not resolve user with login` | ✅ | — |
+
+`copilot-pull-request-reviewer` is the only row that both lands a request *and* matches a review, which is why one variable suffices. The REST **reviewers** endpoint is not used at all, so its `Copilot`-only spelling never comes up. (REST is still used later in this phase for review comments and thread replies.)
+
+**Record a baseline first.** On a re-request the bot's previous review is already on the PR, so without this Phase 6's first poll returns instantly with the *old* review and Phase 7 addresses feedback written against an earlier HEAD:
+
+```bash
+PRIOR=$(gh pr view <N> --json reviews \
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\")] | sort_by(.submittedAt) | last | .submittedAt // \"\"")
+```
+
+"A review exists" and "a review of this HEAD exists" are different questions, and only the second one may gate a merge.
+
+**Request, or re-request, with the same command.** `gh pr edit --add-reviewer` both adds a reviewer and re-requests one who has already reviewed, and a re-request is what triggers a fresh review against the new HEAD:
+
+```bash
+gh pr edit <N> --add-reviewer "$REVIEWER"
+```
+
+**Do not verify by reading `reviewRequests` back — neither API can answer the question.** REST `requested_reviewers` returns only `{users, teams}` and omits bot reviewers entirely; the GraphQL form (`gh pr view <N> --json reviewRequests`) does see them, but a landed request **disappears from it the instant the reviewer submits**. Copilot often reviews within a minute or two, so the faster it works, the more certainly a read-back shows nothing.
+
+The success signal is a review arriving, not a request being visible — and Phase 6 is already polling for exactly that.
+
+**A failed request is not a missing review.** Many repos have Copilot reviewing automatically on open, with no request from anyone. So report the failure, keep polling, and only when Phase 6 times out with no bot review fall back to humans:
+
+Use `reviewers` from the `## Skill profile` when the repo sets it. Otherwise derive a candidate — and **then actually request them**, which is the step whose absence started this whole phase:
+
+```bash
+AUTHOR=$(gh pr view <N> --json author --jq .author.login)
+HUMAN=$(gh pr list --state merged --limit 20 --json reviews \
+  --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER\")) | group_by(.) | max_by(length)[0] // empty")
+
+if [ -n "$HUMAN" ]; then
+  gh pr edit <N> --add-reviewer "$HUMAN"
+else
+  : # no candidate — report it and ask the user who should review; do not guess
+fi
+```
+
+`// empty` rather than a bare `max_by(length)[0]`: on an empty candidate list that expression returns `null` and exits 0, so an unguarded run would request a reviewer literally named `null`. A young repo with no merged PRs, or one whose only reviewers so far are the author and the bot, hits this — and the failure would be silent, in the same shape as the bug this phase exists to prevent.
+
+Excluding the author is not cosmetic either: whoever runs this skill is usually the PR's author, and requesting the author returns `422 Review cannot be requested from pull request author`. Never treat "no bot review" as "no review needed".
 
 ### 6. Wait for the review
 
 The bot typically takes 1–5 minutes. Poll, don't busy-wait:
 
 ```bash
-gh pr view <N> --json reviews --jq "[.reviews[] | select(.author.login == \"Copilot\" or .author.login == \"$REVIEWER\")] | sort_by(.submittedAt) | last"
+gh pr view <N> --json reviews \
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\" and .submittedAt > \"$PRIOR\")] | sort_by(.submittedAt) | last"
 ```
 
-Poll every ~60s for up to ~10 minutes. If nothing arrives after 10 minutes, surface that to the user and stop — don't auto-merge without a review.
+Poll every ~60s for up to ~10 minutes, and require a review **newer than `$PRIOR`** — an earlier one is feedback against an earlier HEAD.
+
+If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
 
 Also pull inline review comments (most feedback is line comments, not the top-level review body):
 
@@ -192,6 +239,18 @@ git log --oneline "$START"..HEAD          # commits since invocation
 ```
 
 Merge condition (ALL must hold):
+- **Nothing is stacked on top of this PR's base** — that is the precise question, and "the base is the default branch" only approximates it: plenty of repos ship through a release or integration branch, and such a repo could never auto-merge under that rule.
+
+  ```bash
+  BASE=$(gh pr view <N> --json baseRefName --jq .baseRefName)
+  DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+  # A PR onto the default branch cannot be stacked — skip the query entirely.
+  [ "$BASE" = "$DEFAULT" ] || gh pr list --state open --head "$BASE" --json number,url
+  ```
+
+  The short-circuit is load-bearing, not an optimisation: `--head` matches on branch *name* and includes cross-repository PRs, so one open fork PR whose head branch is called `main` would otherwise mark **every** PR in the repo as stacked and disable auto-merge outright.
+
+  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself — that silently changes what the approvals on record applied to. AND
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them), AND
@@ -217,7 +276,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked), the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 
