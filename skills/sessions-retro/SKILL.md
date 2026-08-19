@@ -51,12 +51,12 @@ The deliverable is a **detailed, self-contained HTML report** written as `report
 Report structure, in order:
 
 1. Header: window, corpus stats, prefilter precision — and a visible confidentiality banner (see rule 3).
-2. Clusters, largest first. Per cluster: name, count, category, patch as a copy-pasteable code block naming its exact target file — then the **full evidence table**: every occurrence as a row with project, session-id prefix, category, verbatim quote (~300 chars), and what the agent did to trigger it when inferable.
+2. Clusters, largest first, each in its own `<section>` with a **sticky header** (name, count, category — pinned while its section scrolls). Per cluster: the recommended patch as a copy-pasteable code block naming its exact target file; a short **"Possible improvements"** list of 2–3 alternative levers (habit rule vs project CLAUDE.md fact vs memory vs skill edit vs settings/permissions) each with a one-line trade-off; then the **full evidence table**: every occurrence as a row with project, session-id prefix, verbatim quote (~300 chars), and what the agent did to trigger it when inferable.
 3. Near-misses (2×) with the same evidence detail; singletons one row each.
 4. Top 3 patches by expected payoff, with one-line reasoning.
 5. False-positive breakdown by shape (fresh-brief, brainstorming-answer, template-text, answer-to-question, other) with an example each — prefilter lessons for next time.
 
-Keep the HTML a single file: inline CSS, minimal and readable (system font stack, one accent color, zebra-striped tables); no external assets, no JavaScript, no charts.
+Keep the HTML a single file: inline CSS, minimal and readable (system font stack, one accent color, zebra-striped tables, `position: sticky` cluster headers with an opaque background); no external assets, no JavaScript, no charts.
 
 Re-runs over overlapping windows will repeat clusters — that's accepted; there is deliberately no dedup state.
 
