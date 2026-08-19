@@ -103,6 +103,11 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   agent must apply (perf-sensitive paths, known CI false-fails, encryption/tenancy rules),
   plus the scratch dir for triage reports (default `.context/pr-review/` when present).
 - **ownerCanSelfMerge** — whether `deliver` may `gh pr merge --admin` (default: no).
+- **reviewRounds** — how many review→fix→re-review cycles `deliver` may spend before handing the
+  PR back (default: 3). Each round costs a poll window and a CI run, and rounds don't converge on
+  their own — pushing a fix moves HEAD, which invalidates the review that asked for it. `deliver`
+  defers non-blocking findings (nits, out-of-scope suggestions) to the PR's follow-ups instead of
+  pushing them, which is what lets a nits-only review end the loop rather than start another.
 - **forkRemote** — the remote `upstream-pr` pushes to when contributing from a fork
   (default: auto-detected from the branch's remote / `@{push}` / remote classification).
 - **baseBranch** — the PR base when it differs from the GitHub default branch

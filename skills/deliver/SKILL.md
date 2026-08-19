@@ -21,6 +21,7 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
 - **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular), which must be the bot's **login** (`copilot-pull-request-reviewer`, the default) and not an alias like `@copilot`. One value covers requesting and recognising: `gh pr edit` accepts a login, and `.author.login` is what a review carries.
 - **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to fall back to when no bot review arrives (Phase 5). Unset, Phase 5 derives a candidate from recent merged PRs.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
+- **reviewRounds** — from the `## Skill profile`; how many review→fix→re-review cycles this skill may spend before handing back (Phase 7c). Default: 3.
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
 - **Tracker + its status vocabulary** — from the `## Skill profile` (`tracker`). If the repo documents which states mean *in progress*, *in review* and *done*, this skill moves the task along with the PR (Phases 4b and 8b). If it documents a tracker but no vocabulary, don't guess at state names — report the task's current state in Phase 9 instead.
 
@@ -169,16 +170,18 @@ Excluding the author is not cosmetic either: whoever runs this skill is usually 
 
 ### 6. Wait for the review
 
-The bot typically takes 1–5 minutes. Poll, don't busy-wait:
+A re-review of a PR the bot has already seen typically takes 1–5 minutes. A **first** review of a large PR is much slower — 19 minutes, measured on an 1,850-line diff. Poll, don't busy-wait:
 
 ```bash
 gh pr view <N> --json reviews \
   --jq "[.reviews[] | select(.author.login == \"$REVIEWER\" and .submittedAt > \"$PRIOR\")] | sort_by(.submittedAt) | last"
 ```
 
-Poll every ~60s for up to ~10 minutes, and require a review **newer than `$PRIOR`** — an earlier one is feedback against an earlier HEAD.
+Poll every ~60s for up to ~25 minutes, and require a review **newer than `$PRIOR`** — an earlier one is feedback against an earlier HEAD.
 
-If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
+**Don't cut the poll short.** A ten-minute window was the previous rule and it produced a false negative on the first PR that exceeded it: the review landed at 19 minutes, the run had already reported "reviewer unavailable" at 17, and from there it built a whole wrong diagnosis (a 422 from the wrong API spelling, an absent app in an installations list) on top of a bot that was simply still working. A timeout is a claim about the reviewer — make it a true one.
+
+If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a twenty-five-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
 
 Also pull inline review comments (most feedback is line comments, not the top-level review body):
 
@@ -190,15 +193,33 @@ Filter to comments authored by the bot and posted at or after the review's `subm
 
 ### 7. Address feedback
 
-Pushing a fix alone is not enough — also respond on the thread. For every actionable comment:
+**Classify every finding before touching anything.** Two buckets, and the bucket decides whether the branch moves:
+
+- **Blocking** — correctness, security, data loss, a broken contract (API shape, migration, public export), a test that can't fail, a doc that states something the code doesn't do. Fix it here.
+- **Non-blocking** — a nit, naming, wording, formatting, a suggested refactor beyond this PR's purpose, an improvement that would be true of the file before this PR too. **Defer it. Do not fix it on this branch.**
+
+When it's genuinely unclear which bucket a finding is in, it's blocking. The rule exists to stop the loop, not to lower the bar.
+
+**Blocking findings — fix, push, and pay for another round:**
 
 1. Implement the fix locally.
 2. Re-run the relevant local checks from Phase 2 for the files you touched (don't skip — CI re-running is slower than a 30s local lint).
 3. Commit and push.
 4. Reply to the comment thread explaining what changed (`gh api -X POST "repos/$SLUG/pulls/<N>/comments/<comment-id>/replies" -f body=...`) AND resolve the thread via the GraphQL `resolveReviewThread` mutation. Both — reply without resolve leaves a noisy unresolved thread; resolve without reply leaves the reviewer guessing.
-5. For feedback you disagree with: reply explaining why, but don't resolve unilaterally — leave it for the user to settle.
+5. The push moved HEAD, so the review on record no longer covers what would merge. Go to Phase 7c.
+
+**Non-blocking findings — record, don't push:**
+
+1. Reply on the thread saying it's deferred and where it's recorded — never resolve silently, which reads as "fixed".
+2. Add it to the PR body's **follow-ups** section (Phase 4's structure already has one), or file it in the tracker when the `## Skill profile` names one. One line each, with the thread link.
+3. Resolve the thread.
+4. **Leave the branch alone.** This is the whole point: HEAD doesn't move, so the review that raised these findings still covers what would merge, and Phase 8 can merge on it without another round.
+
+A pushed nit costs a full review cycle — a re-request, a poll of up to 25 minutes, and a fresh chance for a non-deterministic reviewer to surface something else in code it already read. That price is worth paying for a security hole. It is not worth paying for an `aria-label`.
 
 If the reviewer raises issues big enough to need new tests or a substantive redesign, stop and tell the user. Don't quietly expand scope.
+
+For feedback you disagree with: reply explaining why, but don't resolve unilaterally — leave it for the user to settle. An unresolved thread blocks the merge in Phase 8, which is the correct outcome for a disagreement the user hasn't seen yet.
 
 ### 7b. Handle CI failures
 
@@ -225,6 +246,30 @@ Hard stop conditions (escalate to user, don't keep grinding):
 - A test failure points at a real bug in code outside the diff (this branch surfaced it but didn't cause it).
 
 Do not merge while any required check is failing or pending. `--admin` bypasses required reviews, not failing CI (see Hard rules).
+
+### 7c. Bound the review loop
+
+A **round** is: request → review arrives → blocking findings fixed and pushed. Rounds are not free — each costs a poll window and re-runs CI — and they do not converge on their own, because fixing anything moves HEAD, which invalidates the review, which mandates another one. Left unbounded, a PR terminates only when a round happens to find literally nothing.
+
+**Cap: 3 rounds.** Read `reviewRounds` from the `## Skill profile` when the repo sets one; default 3.
+
+**Count rounds from the PR, never from this session.** The bot's reviews on the PR *are* the round count, and only that number survives a re-invocation — this skill gets run a second time mid-loop all the time ("the review comments are fixed, deliver again"), and a counter held in the session or in `.context/` would reset to zero every time, which is a cap that never binds:
+
+```bash
+ROUNDS=$(gh pr view <N> --json reviews \
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\")] | length")
+```
+
+Once the review is in hand — and once you've fixed whatever it blocked on — take the first branch that applies:
+
+1. **No blocking findings** (approved, or comment-only with everything deferred per Phase 7) → **the loop is over.** Don't re-request. HEAD is unchanged and this review covers it — go to Phase 8.
+2. **The fixes you just pushed changed a security boundary** → **one more round, regardless of the cap.** See below.
+3. **`$ROUNDS` below the cap** → re-request (Phase 5, and re-record `$PRIOR` first), go to Phase 6.
+4. **`$ROUNDS` at the cap** → stop. Report `awaiting-review` with the round count, what each round found, and what's still unreviewed. Hand back to the user; do not merge, and do not request another.
+
+**The security-boundary carve-out.** A fix touching authentication or credentials, a trust or permission decision, what a sandbox or tool grant allows, what leaves the machine, or how a secret is handled always earns another review — even at the cap, even if it was a two-line change. Everything else on this PR can be corrected by a follow-up commit; this class can't, because the window between merge and the follow-up is the exposure. Say in the report that the cap was exceeded and why.
+
+Reaching the cap is information, not a failure: three consecutive rounds finding real defects means the reviewer is still productive on this diff and a human should look, not that the skill should keep grinding.
 
 ### 8. Auto-merge decision
 
@@ -254,7 +299,15 @@ Merge condition (ALL must hold):
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them), AND
-- The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads.
+- **A review covers HEAD and raised no blocking findings.** A review covers HEAD when no commit has been pushed since it was submitted:
+
+  ```bash
+  gh pr view <N> --json headRefOid,reviews \
+    --jq "{head: .headRefOid, reviewed: ([.reviews[] | select(.author.login == \"$REVIEWER\")] | sort_by(.submittedAt) | last | .commit.oid)}"
+  ```
+
+  The two must match. This is the condition Phase 7's defer rule exists to satisfy: deferring a nit leaves HEAD where the reviewer saw it, so the review still counts; pushing a fix for it would not. `APPROVED` and `COMMENTED` both qualify — a bot that only ever comments would otherwise never let anything merge. AND
+- **No unresolved threads.** Deferred non-blocking findings are resolved and recorded (Phase 7), so they don't appear here; what's left unresolved is a disagreement the user hasn't settled, and that blocks.
 
 If the condition holds → merge:
 
@@ -276,7 +329,9 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, **how many review rounds you spent and what each one found**, **every non-blocking finding you deferred and where you recorded it**, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+
+Deferrals are reported, never absorbed. "Merged, one round, deferred two nits to the PR's follow-ups" is a complete report; "merged" alone hides the judgement calls that got it there.
 
 ## Hard rules
 
@@ -284,7 +339,8 @@ Final message to the user must include: PR URL, merge status (merged / awaiting-
 2. **Never push to the default branch.** This skill operates on a feature branch only.
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. A pre-push gate that takes >2 min defeats the point of front-loading.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
-5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
-6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
-7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
-8. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
+5. **Don't expand scope under cover of review feedback.** A suggestion beyond this PR's purpose is a non-blocking finding: defer and record it per Phase 7, don't implement it. The cost isn't only the diff — every push buys another review round.
+6. **Never spend more than `reviewRounds` review cycles** (default 3) without handing back, and never merge on a review that predates HEAD. The only exception is the security-boundary carve-out in Phase 7c, which adds a round rather than skipping one.
+7. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
+8. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
+9. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
