@@ -18,7 +18,7 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
   ```
-- **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular). It sets *both* of the names Phase 5 needs — the one to request and the one reviews are authored by — because a bot's own login is accepted by `gh pr edit` as well as its alias. Unset, Phase 5 defaults to Copilot (`@copilot` / `copilot-pull-request-reviewer`).
+- **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular), which must be the bot's **login** (`copilot-pull-request-reviewer`, the default) and not an alias like `@copilot`. One value covers requesting and recognising: `gh pr edit` accepts a login, and `.author.login` is what a review carries.
 - **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to fall back to when no bot review arrives (Phase 5). Unset, Phase 5 derives a candidate from recent merged PRs.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
@@ -105,17 +105,20 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 
 ### 5. Request reviewer
 
-Assign all three up front — an unset `REVIEWER_AUTHOR` interpolates to `""`, which matches no review and fails exactly the silent-empty way this phase exists to prevent:
+Assign both up front — an unset variable interpolates to `""`, which matches no review and fails exactly the silent-empty way this phase exists to prevent:
 
 ```bash
 SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-REVIEWER=${PROFILE_REVIEWER:-@copilot}                          # what to request
-REVIEWER_AUTHOR=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # what reviews are authored by
+REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
 ```
 
-`PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. **A configured value replaces both names**, which works because a bot's own login is accepted by `gh pr edit` as well as its alias — so a repo running a different reviewer bot gets it requested *and* recognised, rather than Copilot requested and its own bot polled for. (Not to be confused with **`reviewers`**, plural, which is the human fallback list below.)
+`PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. One value serves both roles because `gh pr edit --add-reviewer` accepts a bot's **login**, not only its alias.
 
-**Why two variables and not one:** Copilot answers to a different name in each API. Measured on `gh` 2.95.0 against a repo where the bot works:
+**Set it to the login, never an alias.** `@copilot` is accepted by `gh pr edit` and is what GitHub's own docs show — but reviews are authored by `copilot-pull-request-reviewer`, and `.author.login` never carries a leading `@`. A profile saying `reviewer: @somebot` would request correctly and then match nothing, timing out on a review that had already arrived. If a bot's alias and login differ and you must request by alias, the two roles genuinely need two values — say so in the profile rather than letting one silently half-work.
+
+(Not to be confused with **`reviewers`**, plural, which is the human fallback list below.)
+
+**Why the login and not the alias:** Copilot answers to a different name in each API, and only one of them is what a review is authored by. Measured on `gh` 2.95.0 against a repo where the bot works:
 
 | Name | `gh pr edit --add-reviewer` | REST `POST .../requested_reviewers` | authors reviews as |
 |---|---|---|---|
@@ -123,13 +126,13 @@ REVIEWER_AUTHOR=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # what revi
 | `copilot-pull-request-reviewer` | ✅ lands | ❌ `422 … not a collaborator` | ✅ |
 | `Copilot` | ❌ `Could not resolve user with login` | ✅ | — |
 
-So this phase uses exactly two: `@copilot` to request, and `copilot-pull-request-reviewer` to recognise the review when it arrives. The REST **reviewers** endpoint is not used at all, which is what removes the need for the third spelling. (REST is still used later in this phase for review comments and thread replies.)
+`copilot-pull-request-reviewer` is the only row that both lands a request *and* matches a review, which is why one variable suffices. The REST **reviewers** endpoint is not used at all, so its `Copilot`-only spelling never comes up. (REST is still used later in this phase for review comments and thread replies.)
 
 **Record a baseline first.** On a re-request the bot's previous review is already on the PR, so without this Phase 6's first poll returns instantly with the *old* review and Phase 7 addresses feedback written against an earlier HEAD:
 
 ```bash
 PRIOR=$(gh pr view <N> --json reviews \
-  --jq "[.reviews[] | select(.author.login == \"$REVIEWER_AUTHOR\")] | sort_by(.submittedAt) | last | .submittedAt // \"\"")
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\")] | sort_by(.submittedAt) | last | .submittedAt // \"\"")
 ```
 
 "A review exists" and "a review of this HEAD exists" are different questions, and only the second one may gate a merge.
@@ -151,7 +154,7 @@ Use `reviewers` from the `## Skill profile` when the repo sets it. Otherwise der
 ```bash
 AUTHOR=$(gh pr view <N> --json author --jq .author.login)
 HUMAN=$(gh pr list --state merged --limit 20 --json reviews \
-  --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER_AUTHOR\")) | group_by(.) | max_by(length)[0] // empty")
+  --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER\")) | group_by(.) | max_by(length)[0] // empty")
 
 if [ -n "$HUMAN" ]; then
   gh pr edit <N> --add-reviewer "$HUMAN"
@@ -170,7 +173,7 @@ The bot typically takes 1–5 minutes. Poll, don't busy-wait:
 
 ```bash
 gh pr view <N> --json reviews \
-  --jq "[.reviews[] | select(.author.login == \"$REVIEWER_AUTHOR\" and .submittedAt > \"$PRIOR\")] | sort_by(.submittedAt) | last"
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\" and .submittedAt > \"$PRIOR\")] | sort_by(.submittedAt) | last"
 ```
 
 Poll every ~60s for up to ~10 minutes, and require a review **newer than `$PRIOR`** — an earlier one is feedback against an earlier HEAD.
