@@ -13,6 +13,7 @@ read what a counterparty changed in a contract.
 | [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, close a now-duplicate fork PR as superseded, degrade to a single comment when you lack write access. Never merges. |
 | [`pr-polish`](./skills/pr-polish/SKILL.md) | Rewrite a PR's title/description so they match the branch as it stands and read top-down: problem → fix → details → verification. Verifies every claim (incl. referenced PRs' current state) before writing. Metadata-only. |
 | [`ticket-refresh`](./skills/ticket-refresh/SKILL.md) | `pr-polish` for a tracker ticket: re-verify its body against reality — resolve every linked PR/issue (following supersessions), check whether an "upstream" fix already ships in the installed version, and rewrite claims the world has overtaken, then post one comment so watchers learn what changed. Body + comment only; never touches Status/Assignee. |
+| [`ticket-polish`](./skills/ticket-polish/SKILL.md) | `ticket-refresh`'s complement: refresh makes a body true, polish makes it legible. Restructure an accreted ticket — one canonical enumeration instead of parallel numbering, open work leads, history compressed to its surviving reasoning, a checkable DoD of only the remaining work, title re-trued. Form only, facts unchanged. |
 | [`review-queue`](./skills/review-queue/SKILL.md) | Triage every PR awaiting your review: classify the queue, fan out one read-only reviewer subagent per PR, merge into a linked triage table (verdicts, draft comments, cross-PR conflicts). Posts nothing without explicit per-action approval. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
@@ -22,7 +23,7 @@ read what a counterparty changed in a contract.
 | [`docx-diff`](./skills/docx-diff/SKILL.md) | Reconstruct a redline between two `.docx` versions when the counterparty edited without tracked changes: pandoc → sentence-level unified diff → a classification of which changes are material and who they favour. Needs `pandoc`. |
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 
-`explain`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -92,8 +93,8 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   status / priority / tags. Name the **status vocabulary** too — which states mean *in
   progress*, *in review*, *done* — and `deliver` moves the PR's task along with the PR.
   Without it `deliver` reports the task's state instead of guessing at state names.
-  `ticket-refresh` reads the same knob to find and rewrite a ticket's body, and to post
-  the comment recording that rewrite — but never moves its status. Say if the tracker's
+  `ticket-refresh` and `ticket-polish` read the same knob to find and rewrite a ticket's
+  body, and to post the comment recording the rewrite — but never move its status. Say if the tracker's
   comments are unusable (no API, or nobody reads them); the skill skips the comment
   rather than folding the narration back into the body.
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).

@@ -70,7 +70,8 @@ A ticket body is **state** — it describes the situation as it now stands. Its 
 - Keep the *reason* behind a counter-intuitive finding — that's current-state knowledge someone needs in order not to "fix" it back.
 - Preserve evidence, measurements and reproduction steps. They don't rot; state assertions do.
 - Update the section's "checked" date to today.
-- Keep it the same size. A refresh that doubles a ticket has stopped refreshing and started journaling.
+- Keep it the same size. A refresh that doubles a ticket has stopped refreshing and started journaling. A body that ends up accurate but shapeless is `ticket-polish`'s job — restructuring is not this skill's license.
+- If the refresh closes an item, prune its condition from the "Done when" — a DoD mixing satisfied and open conditions can't be checked.
 
 Then apply via the tracker's update tool with a targeted content edit, not a whole-page rewrite — a full-body replace risks silently dropping content you never read.
 
