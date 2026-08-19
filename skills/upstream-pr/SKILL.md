@@ -35,10 +35,11 @@ Refuse to run if `BRANCH` is the base branch or either repo's default branch —
 
 ### 1. Resolve the triangle
 
-Resolve `FORK_REMOTE`, `UPSTREAM_SLUG`, `BASE`, and your upstream permission level using the rules in [Resolution rules](#resolution-rules) below. Then print a table of the four values **with the source of each**, before anything mutating happens:
+Resolve `FORK_REMOTE`, `FORK_SLUG`, `UPSTREAM_SLUG`, `BASE`, and your upstream permission level using the rules in [Resolution rules](#resolution-rules) below. Then print a table of the values **with the source of each**, before anything mutating happens:
 
 ```
 fork remote   fsh → fullstackhouse/open-mercato   (branch.<branch>.remote, isFork=true, parent matches upstream)
+fork slug     fullstackhouse/open-mercato         (remote URL; FORK_OWNER is its first segment)
 upstream      open-mercato/open-mercato           (fork's parent)
 base branch   develop                             (.ai/agentic.config.json: baseBranch)
 permission    READ                                (repos/<up> .permissions: push=false, triage=false)
@@ -49,6 +50,33 @@ Then fetch the base — everything downstream depends on it being current:
 ```bash
 git fetch "$UPSTREAM_REMOTE" "$BASE"
 ```
+
+Then bring **the fork's own copy of `$BASE`** up to date. Nothing else in the flow updates it: it is a mirror nobody commits to, so it drifts silently. The branch you just cut is fine either way — *this* PR is diffed against the upstream ref fetched above, and GitHub diffs a cross-fork PR from the merge-base, so a stale fork base cannot corrupt it. What the drift ruins is a PR opened **into** the fork's base: cut a branch from the freshly-fetched upstream ref, as the fetch above encourages, then open it against the fork, and the diff carries every intervening upstream commit as if the author wrote them. The reviewer meets those first. This is the only step positioned to prevent that, and it costs one comparison.
+
+Compare the two refs locally, with the same `--is-ancestor` test Phase 7 uses, so one property has one vocabulary:
+
+```bash
+git fetch "$FORK_REMOTE" "$BASE" || echo "fork has no $BASE"
+git rev-list --count "$FORK_REMOTE/$BASE..$UPSTREAM_REMOTE/$BASE"          # commits the fork is behind
+git merge-base --is-ancestor "$FORK_REMOTE/$BASE" "$UPSTREAM_REMOTE/$BASE" && echo mirror || echo diverged
+```
+
+Locally rather than through `gh api .../compare` on purpose: a `$BASE` containing a slash (`release/*`) is an ordinary git ref but splits an API URL path, and these refs are already fetched, so it costs no round trip.
+
+- **`mirror`, count 0** → already current. Say nothing and move on.
+- **`mirror`, count > 0** → fast-forward it, and report how many commits it moved:
+
+  ```bash
+  gh repo sync "$FORK_SLUG" --branch "$BASE"
+  ```
+
+  No `--source` is needed: it defaults to the destination's parent, which is where the upstream slug was resolved from in the first place.
+
+- **`diverged`** → **stop and ask.** The fork's base carries commits the upstream doesn't, so it is not a mirror and `gh repo sync` would need `--force` to land. Never pass it: that rewrites a branch other people's open PRs are based on.
+
+Two ways this degrades, neither fatal — print the command and carry on, because the cost falls on the next branch and not on this PR: the fork may not have `$BASE` at all (forked with `--default-branch-only`, or the upstream created the branch later), in which case the fetch fails and there is nothing to compare; and the sync may fail for lack of permission on the fork.
+
+**This phase runs before Phase 7 and changes its answer** — a fork base fast-forwarded here reads as `mirror` there, which is the desirable direction but makes the two order-dependent.
 
 ### 2. Guardrail checks
 
@@ -137,6 +165,8 @@ git fetch "$FORK_REMOTE" "$FORK_BASE"
 git merge-base --is-ancestor "$FORK_REMOTE/$FORK_BASE" "$UPSTREAM_REMOTE/$BASE" && echo mirror || echo diverged
 ```
 
+Same test as Phase 1, and Phase 1 runs first: if `$FORK_BASE` is the branch it fast-forwarded, this reads `mirror` because of that, not independently of it.
+
 - **mirror** → close it, with the note.
 - **diverged** → leave it open and say why in the report. Never close it "to tidy up".
 
@@ -162,6 +192,7 @@ Final message must include:
 
 - The PR URL, and whether it was **created** or **updated**.
 - The four resolved values and where each came from.
+- Whether the fork's base branch was fast-forwarded, by how many commits — or why it wasn't. Omit when it was already current; Phase 1 says nothing in that case and neither should the report.
 - Your permission level upstream and everything that was consequently **deferred to a maintainer** (labels, assignee, reviewer, QA gate).
 - The fork PR closed as superseded, if any — or the one left open, with the `diverged` reason.
 - Any PR-template checkbox left unticked, named explicitly — especially CLA/legal ones.
@@ -308,7 +339,7 @@ On **update**, this overrides "never change labels on update" for this one label
 ## Hard rules
 
 1. **Never merge.** No `gh pr merge`, no `--auto`, no `--admin`. This skill hands the PR to the upstream's process and stops.
-2. **Never push to the upstream remote**, and never to a default or protected branch on any remote.
+2. **Never push to the upstream remote**, and never to a default or protected branch on any remote. Fast-forwarding the fork's own `$BASE` (Phase 1) is the one exception, and it is narrow: `gh repo sync` calls the merge-upstream API rather than pushing, it is fast-forward-only, and mirroring the upstream is the entire purpose of that branch.
 3. **Never force-push.** A fork PR's history is a maintainer's review context.
 4. **Never mutate the user's git setup** — no `gh repo fork`, no `git remote add`, no `git config` writes, no `push -u`. Print the command and let them run it.
 5. **Never `--no-verify`, never `--no-gpg-sign`.** Fix the hook's root cause.
