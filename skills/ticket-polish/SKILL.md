@@ -1,6 +1,6 @@
 ---
 name: ticket-polish
-description: Restructure a tracker ticket that has grown hard to read — collapse accreted sections and parallel numbering into one state-first body, compress history to the reasoning that must survive, rewrite the Done-when as a short checkable DoD covering only remaining work, and re-true the title. Form only, facts unchanged — run ticket-refresh first if they aren't current. Use when a ticket has accreted through refreshes or scope changes, reads as a journal, or someone says "this ticket got complex — clean it up". Args: a ticket URL/ID, or nothing to use the current branch's PR task line.
+description: Restructure a tracker ticket that has grown hard to read — collapse accreted sections and parallel numbering into one state-first body, compress history to the reasoning that must survive, rewrite the Done-when as a short checkable DoD covering only remaining work, and re-true the title. Form only, facts unchanged — runs ticket-refresh itself first when the body's facts have gone stale. Use when a ticket has accreted through refreshes or scope changes, reads as a journal, or someone says "this ticket got complex — clean it up". Args: a ticket URL/ID, or nothing to use the current branch's PR task line.
 ---
 
 # ticket-polish
@@ -9,7 +9,7 @@ You are running the **ticket-polish** skill. Goal: make a ticket readable top-do
 
 This is `pr-polish` one artifact over, and `ticket-refresh`'s complement: refresh makes a body *true*, polish makes it *legible*. A ticket that has survived several refreshes is usually accurate and unreadable at once — every correction landed in the right paragraph, and the paragraphs no longer add up to a shape.
 
-**Scope: body, title, and one comment.** Never change Status, Assignee, Priority, or dates — propose them. **Never change facts.** If a claim looks stale mid-polish, stop and run `ticket-refresh` (or say so) before restructuring: polishing wrong facts makes them more convincing.
+**Scope: body, title, and one comment.** Never change Status, Assignee, Priority, or dates — propose them. **Never change facts** — when they've gone stale, §2 runs `ticket-refresh` to correct them *before* any restructuring, and the same applies to a claim that only starts to smell mid-polish. Polishing wrong facts makes them more convincing.
 
 No confidentiality gate here: this writes to the team's or the client's own tracker, not to anything public.
 
@@ -17,9 +17,20 @@ No confidentiality gate here: this writes to the team's or the client's own trac
 
 As in `ticket-refresh` §1: explicit URL/ID → use it; nothing given → the current branch's PR body task line; the tracker and how to reach it from the repo's `## Skill profile` (`tracker`).
 
-## 2. Gate: are the facts current?
+## 2. Gate: are the facts current? Refresh them if not
 
-A polish rearranges; it must not launder. Check the body's own "checked" date and spot-verify two or three state assertions (one `gh pr view` / tracker fetch each). Anything contradicted → this is a refresh-then-polish job, not a polish. Fresh enough → proceed, and carry the checked date through unchanged: polishing is not checking.
+A polish rearranges; it must not launder. Two checks:
+
+- **Age.** The body's own "checked on …" date — missing, or older than **12 hours** → stale.
+- **Spot-check.** Two or three state assertions, one `gh pr view` / tracker fetch each. Anything contradicted → stale, whatever the date says.
+
+Twelve hours is deliberately short: it makes refreshing the **default path** and proceeding the exception. A ticket accreted enough to be worth restructuring has almost always sat long enough for its linked PRs to move, and the cost of the refresh is small against restructuring around a claim that turned false overnight. In practice only a body refreshed earlier the same working session skips it.
+
+**Stale → run `ticket-refresh` on this ticket now**, in the same run, and polish what it returns. Don't invert the order: refresh edits in place at constant size, so restructuring first only means reshaping claims that are about to change.
+
+Two amendments while it runs as this gate — it posts **no comment of its own** (§5 folds both halves into one) and **no separate report** (§6 carries it). Everything else runs unchanged: the full claim sweep, closed PRs followed to their successors, upstream fixes checked against the installed version, the checked date set to today.
+
+**Fresh → proceed**, carrying the checked date through unchanged: polishing is not checking.
 
 ## 3. Diagnose the decay
 
@@ -44,12 +55,14 @@ Top-down, general to specific, exactly as `pr-polish` orders a PR body: what thi
 
 Post **one short comment** (per `ticket-refresh` §6): what was restructured, "no facts changed; page history holds the long form". It points, never contains.
 
+Refreshed at the gate? Still **one** comment, and it leads with the corrections — which claim was wrong and why — because that's the half watchers are still carrying; the restructuring is a closing clause. Two comments for one run is how a thread stops being read.
+
 Then look at the thread: record-comments fully superseded by the body are safe to resolve — propose that in the comment or report (most tracker APIs can't resolve; the human clicks).
 
 ## 6. Report
 
+- **Whether the gate refreshed, and what it contradicted — first**, each with the evidence that overturned it. A reshaped body is a nicety; a corrected claim is news, and anyone who read the old body still holds the wrong one.
 - Before/after size and the one-line structural story ("dual numbering → one table; what's-left now leads; DoD 4 stale conditions → 2 open ones").
-- Anything that smelled stale during the gate — hand it to `ticket-refresh` rather than fixing it silently.
 - Proposed Status / Assignee / title-convention changes needing a human.
 
 ## Hard rules
@@ -57,5 +70,5 @@ Then look at the thread: record-comments fully superseded by the body are safe t
 1. **Never change a fact.** Same claim, better shape. A polish that alters a state assertion has become an unverified refresh.
 2. **Never delete evidence** — effects, measurements, repro steps, spec citations. Compress narration, keep findings.
 3. **Never touch Status, Assignee, or Priority.** Propose them.
-4. **Never polish over a stale body.** Gate first (§2); refresh-then-polish when in doubt.
+4. **Never polish over a stale body.** Gate first (§2), and refresh in the same run when it fails — never restructure a claim you haven't confirmed.
 5. **One comment, pointing at the body** — never a summary long enough to become a second body.
