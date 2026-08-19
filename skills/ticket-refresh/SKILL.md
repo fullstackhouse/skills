@@ -69,7 +69,7 @@ A ticket body is **state** — it describes the situation as it now stands. Its 
 - **Edit the paragraph that's wrong.** Don't append a correction under it, don't strike it through, don't add "an earlier revision said". The tracker's version history holds the old text; a body carrying its own patch stack makes every reader apply the diff by hand.
 - Keep the *reason* behind a counter-intuitive finding — that's current-state knowledge someone needs in order not to "fix" it back.
 - Preserve evidence, measurements and reproduction steps. They don't rot; state assertions do.
-- Update the section's "checked" date to today.
+- Update the section's "checked" stamp to now — date **and** time, UTC. A bare date can't answer "is this still true twelve hours on", which is exactly what `ticket-polish` §2 asks of it.
 - Keep it the same size. A refresh that doubles a ticket has stopped refreshing and started journaling. A body that ends up accurate but shapeless is `ticket-polish`'s job — restructuring is not this skill's license.
 - If the refresh closes an item, prune its condition from the "Done when" — a DoD mixing satisfied and open conditions can't be checked.
 

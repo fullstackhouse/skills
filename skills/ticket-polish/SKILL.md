@@ -21,16 +21,16 @@ As in `ticket-refresh` §1: explicit URL/ID → use it; nothing given → the cu
 
 A polish rearranges; it must not launder. Two checks:
 
-- **Age.** The body's own "checked on …" date — missing, or older than **12 hours** → stale.
+- **Age.** The body's own "checked on …" stamp — missing, or more than **12 hours** old → stale. A date-only stamp (what runs before this convention wrote) can't answer a same-day question: anything but today's date is stale, and today's falls through to the spot-check.
 - **Spot-check.** Two or three state assertions, one `gh pr view` / tracker fetch each. Anything contradicted → stale, whatever the date says.
 
 Twelve hours is deliberately short: it makes refreshing the **default path** and proceeding the exception. A ticket accreted enough to be worth restructuring has almost always sat long enough for its linked PRs to move, and the cost of the refresh is small against restructuring around a claim that turned false overnight. In practice only a body refreshed earlier the same working session skips it.
 
 **Stale → run `ticket-refresh` on this ticket now**, in the same run, and polish what it returns. Don't invert the order: refresh edits in place at constant size, so restructuring first only means reshaping claims that are about to change.
 
-Two amendments while it runs as this gate — it posts **no comment of its own** (§5 folds both halves into one) and **no separate report** (§6 carries it). Everything else runs unchanged: the full claim sweep, closed PRs followed to their successors, upstream fixes checked against the installed version, the checked date set to today.
+Two amendments while it runs as this gate — it posts **no comment of its own** (§5 folds both halves into one) and **no separate report** (§6 carries it). Everything else runs unchanged: the full claim sweep, closed PRs followed to their successors, upstream fixes checked against the installed version, the checked stamp set to now.
 
-**Fresh → proceed**, carrying the checked date through unchanged: polishing is not checking.
+**Fresh → proceed**, carrying the checked stamp through unchanged: polishing is not checking.
 
 ## 3. Diagnose the decay
 
@@ -53,9 +53,9 @@ Top-down, general to specific, exactly as `pr-polish` orders a PR body: what thi
 
 ## 5. Comment and comment hygiene
 
-Post **one short comment** (per `ticket-refresh` §6): what was restructured, "no facts changed; page history holds the long form". It points, never contains.
+Post **one short comment** (per `ticket-refresh` §6): what was restructured, and — **only if the gate found the body fresh** — "no facts changed; page history holds the long form". It points, never contains.
 
-Refreshed at the gate? Still **one** comment, and it leads with the corrections — which claim was wrong and why — because that's the half watchers are still carrying; the restructuring is a closing clause. Two comments for one run is how a thread stops being read.
+Refreshed at the gate? Then facts *did* change, and the comment may not say otherwise. Still **one** comment, leading with the corrections — which claim was wrong and why — because that's the half watchers are still carrying; the restructuring is a closing clause. Two comments for one run is how a thread stops being read.
 
 Then look at the thread: record-comments fully superseded by the body are safe to resolve — propose that in the comment or report (most tracker APIs can't resolve; the human clicks).
 
