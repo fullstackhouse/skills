@@ -104,9 +104,17 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 
 ### 5. Request reviewer
 
-`SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)`.
+Assign all three up front — an unset `REVIEWER_AUTHOR` interpolates to `""`, which matches no review and fails exactly the silent-empty way this phase exists to prevent:
 
-**Copilot answers to a different name in each API, so there is no single `REVIEWER`.** Measured on `gh` 2.95.0 against a repo where the bot works:
+```bash
+SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+REVIEWER=${PROFILE_REVIEWER:-@copilot}                          # what to request
+REVIEWER_AUTHOR=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # what reviews are authored by
+```
+
+`PROFILE_REVIEWER` is the `## Skill profile` `reviewer` knob, unset when the repo documents none. **A configured value replaces both names**, which works because a bot's own login is accepted by `gh pr edit` as well as its alias — so a repo running a different reviewer bot gets it requested *and* recognised, rather than Copilot requested and its own bot polled for.
+
+**Why two variables and not one:** Copilot answers to a different name in each API. Measured on `gh` 2.95.0 against a repo where the bot works:
 
 | Name | `gh pr edit --add-reviewer` | REST `POST .../requested_reviewers` | authors reviews as |
 |---|---|---|---|
@@ -114,24 +122,24 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 | `copilot-pull-request-reviewer` | ✅ lands | ❌ `422 … not a collaborator` | ✅ |
 | `Copilot` | ❌ `Could not resolve user with login` | ✅ | — |
 
-So this phase uses exactly two: **`@copilot`** to request, and **`REVIEWER_AUTHOR`** — `copilot-pull-request-reviewer`, overridable in the `## Skill profile` — to recognise the review when it arrives. The REST endpoint is not used at all, which is what removes the need for the third spelling.
+So this phase uses exactly two: `@copilot` to request, and `copilot-pull-request-reviewer` to recognise the review when it arrives. The REST **reviewers** endpoint is not used at all, which is what removes the need for the third spelling. (REST is still used later in this phase for review comments and thread replies.)
 
-Determine state first:
+**Record a baseline first.** On a re-request the bot's previous review is already on the PR, so without this Phase 6's first poll returns instantly with the *old* review and Phase 7 addresses feedback written against an earlier HEAD:
 
 ```bash
-gh pr view <N> --json reviews --jq "[.reviews[] | select(.author.login == \"$REVIEWER_AUTHOR\")] | length"
+PRIOR=$(gh pr view <N> --json reviews \
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER_AUTHOR\")] | sort_by(.submittedAt) | last | .submittedAt // \"\"")
 ```
+
+"A review exists" and "a review of this HEAD exists" are different questions, and only the second one may gate a merge.
 
 **Request, or re-request, with the same command.** `gh pr edit --add-reviewer` both adds a reviewer and re-requests one who has already reviewed, and a re-request is what triggers a fresh review against the new HEAD:
 
 ```bash
-gh pr edit <N> --add-reviewer @copilot
+gh pr edit <N> --add-reviewer "$REVIEWER"
 ```
 
-**Do not verify by reading `reviewRequests` back.** Two independent reasons it reports a false negative, both observable on any PR the bot has touched:
-
-- The REST `requested_reviewers` endpoint returns only `{users, teams}` and **omits bot reviewers entirely**. Only the GraphQL form sees them: `gh pr view <N> --json reviewRequests`, whose `Bot` case carries `login`.
-- A request that landed **disappears** from `reviewRequests` the instant the reviewer submits. Copilot often reviews within a minute or two, so the faster it works, the more certainly the read-back shows nothing.
+**Do not verify by reading `reviewRequests` back — neither API can answer the question.** REST `requested_reviewers` returns only `{users, teams}` and omits bot reviewers entirely; the GraphQL form (`gh pr view <N> --json reviewRequests`) does see them, but a landed request **disappears from it the instant the reviewer submits**. Copilot often reviews within a minute or two, so the faster it works, the more certainly a read-back shows nothing.
 
 The success signal is a review arriving, not a request being visible — and Phase 6 is already polling for exactly that.
 
@@ -143,17 +151,20 @@ gh pr list --state merged --limit 20 --json reviews \
   --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER_AUTHOR\")) | group_by(.) | max_by(length)[0]"
 ```
 
-Excluding the author is not cosmetic: whoever runs this skill is usually the PR's author, and requesting the author returns `422 Review cannot be requested from pull request author` — failing in the same silent shape as the bug this phase exists to prevent. Prefer `reviewers` from the `## Skill profile` when it is set; the query above is the fallback's fallback. Never treat "no bot review" as "no review needed".
+**No candidate → stop and ask.** `max_by(length)[0]` returns `null` on an empty list and exits 0, so an unguarded run would request a reviewer literally named `null` — a young repo, or one whose only reviewers so far are the author and the bot, hits this. Excluding the author is not cosmetic either: whoever runs this skill is usually the PR's author, and requesting the author returns `422 Review cannot be requested from pull request author` — failing in the same silent shape as the bug this phase exists to prevent. Prefer `reviewers` from the `## Skill profile` when it is set; the query above is the fallback's fallback. Never treat "no bot review" as "no review needed".
 
 ### 6. Wait for the review
 
 The bot typically takes 1–5 minutes. Poll, don't busy-wait:
 
 ```bash
-gh pr view <N> --json reviews --jq "[.reviews[] | select(.author.login == \"$REVIEWER_AUTHOR\")] | sort_by(.submittedAt) | last"
+gh pr view <N> --json reviews \
+  --jq "[.reviews[] | select(.author.login == \"$REVIEWER_AUTHOR\" and .submittedAt > \"$PRIOR\")] | sort_by(.submittedAt) | last"
 ```
 
-Poll every ~60s for up to ~10 minutes. If nothing arrives by then, fall back to a human reviewer as Phase 5 describes and say so in the report. Either way **a review is required** — never auto-merge without one.
+Poll every ~60s for up to ~10 minutes, and require a review **newer than `$PRIOR`** — an earlier one is feedback against an earlier HEAD.
+
+If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
 
 Also pull inline review comments (most feedback is line comments, not the top-level review body):
 
@@ -218,8 +229,12 @@ Merge condition (ALL must hold):
 
   ```bash
   BASE=$(gh pr view <N> --json baseRefName --jq .baseRefName)
-  gh pr list --state open --head "$BASE" --json number,url    # non-empty ⇒ this PR is stacked
+  DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+  # A PR onto the default branch cannot be stacked — skip the query entirely.
+  [ "$BASE" = "$DEFAULT" ] || gh pr list --state open --head "$BASE" --json number,url
   ```
+
+  The short-circuit is load-bearing, not an optimisation: `--head` matches on branch *name* and includes cross-repository PRs, so one open fork PR whose head branch is called `main` would otherwise mark **every** PR in the repo as stacked and disable auto-merge outright.
 
   A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself — that silently changes what the approvals on record applied to. AND
 - ≤ ~100 lines changed since `start-sha`, AND
@@ -247,7 +262,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 
