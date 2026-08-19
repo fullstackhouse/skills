@@ -23,8 +23,9 @@ read what a counterparty changed in a contract.
 | [`docx-diff`](./skills/docx-diff/SKILL.md) | Reconstruct a redline between two `.docx` versions when the counterparty edited without tracked changes: pandoc → sentence-level unified diff → a classification of which changes are material and who they favour. Needs `pandoc`. |
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 | [`zoom-out`](./skills/zoom-out/SKILL.md) | Break mid-task tunnel vision: restate the goal from the original request, mark sunk work ignorable, measure the decision space, get a fresh-context second opinion (subagent that never sees the current approach), present 2–3 options-in-kind + a recommendation. Analysis only until the user picks. |
+| [`lessons`](./skills/lessons/SKILL.md) | Harvest the human turns from a day's Claude Code transcripts (all of a repo's Conductor workspaces at once), rank corrections by how many *distinct* sessions hit them, and propose the survivors as durable rules — CLAUDE.md/AGENTS.md entries, memory files, or a skill fix. Proposes only; transcripts never leave the machine. |
 
-`explain`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, `design-explore`, and `lessons` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
