@@ -9,7 +9,7 @@ You are running the **ticket-refresh** skill. Goal: make a tracker ticket's body
 
 This is `pr-polish` one artifact over: same job (a description that drifted from reality), different source of truth. There, the diff. Here, the outside world — merged PRs, superseded PRs, shipped releases, sibling tickets.
 
-**Scope: the ticket's body only.** Never change Status, Assignee, Priority, or dates — propose those in the report and let a human apply them. `deliver` owns moving a task's status along with its PR; this skill does not move anything. A wrong status is read as fact by people who weren't in the session.
+**Scope: the ticket's body, plus one comment recording what you changed (§6).** Never change Status, Assignee, Priority, or dates — propose those in the comment and the report, and let a human apply them. `deliver` owns moving a task's status along with its PR; this skill does not move anything. A wrong status is read as fact by people who weren't in the session.
 
 No confidentiality gate here: this skill writes to the team's or the client's own tracker, not to anything public. If your findings need to reach a public issue, that's `upstream-pr`'s gate, not this one.
 
@@ -74,10 +74,33 @@ A ticket body is **state** — it describes the situation as it now stands. Its 
 
 Then apply via the tracker's update tool with a targeted content edit, not a whole-page rewrite — a full-body replace risks silently dropping content you never read.
 
-## 6. Report
+## 6. Post one comment — the record half of the change
+
+§5 erases the wrong version without a trace, which is right for a body but leaves
+everyone who already read it carrying the old claims; a tracker's page history notifies
+nobody. The comment thread is the **record** — dated, closed, and the only part of a
+ticket that reaches watchers. The edit and the comment are two halves of one change.
+
+- **One comment per run, only when something was contradicted or materially changed.** A
+  run that confirms everything edits nothing and comments nothing. A thread that fills
+  with "checked, still true" trains people to skip it.
+- **The comment points; it never contains.** Every fact in it is already in the body:
+  *"the trail section now says X — it said Y, which was wrong because Z."* A finding that
+  lives only in a comment is how a ticket comes to read as unstarted work while the
+  implementation sits finished on a branch, recorded in a comment nobody re-read.
+- **Carry what the body is forbidden to hold**: the correction narration §5 keeps out,
+  the date you checked, and the **decisions you're handing back** — proposed
+  Status/Assignee/re-scope, sibling tickets needing the same refresh, spin-off work.
+  Those are asks, not state.
+- **@-mention the assignee when there's a decision.** An unmentioned comment notifies
+  roughly nobody.
+- No usable comment API on this tracker (`tracker` profile knob) → skip it, say so in the
+  report, and do **not** compensate by moving the narration into the body.
+
+## 7. Report
 
 - **Contradicted claims first**, each with the evidence that overturned it — anyone who read the old body is still carrying them.
-- What you changed, and what you deliberately left.
+- What you changed, what you deliberately left, and a link to the comment you posted (or why you didn't).
 - **Proposed** Status / Assignee / scope changes, with the reasoning, flagged as needing their decision. Say what the ticket now means: e.g. "three of four items are closed; what's left is item 3, unowned, no PR — this is a re-scope or a park, not 'In progress'."
 - Anything that deserves its own ticket rather than a line in this one.
 
@@ -88,3 +111,4 @@ Then apply via the tracker's update tool with a targeted content edit, not a who
 3. **Never record a resolution you haven't seen.** "Presumably merged by now" is how the ticket got wrong in the first place. Unverifiable stays labelled unverifiable.
 4. **Never treat a closed PR as the end of the story** without reading its closing comments for a successor.
 5. **Never leave a contradicted claim in place** because rewriting it is awkward. That claim is why the skill ran.
+6. **Never let a comment be a finding's only home.** Comment after the body is correct, pointing at it — a shadow body rots the same way, unwatched.
