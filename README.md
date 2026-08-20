@@ -9,7 +9,9 @@ read what a counterparty changed in a contract.
 | Skill | Purpose |
 |-------|---------|
 | [`explain`](./skills/explain/SKILL.md) | Explain an existing change (working tree / branch / PR / commit) in plain language with a clearly-hedged merge recommendation. Read-only. |
-| [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal. |
+| [`brainstorm`](./skills/brainstorm/SKILL.md) | Divergent conversation before any artifact exists: question the idea, weigh alternatives incl. building nothing, reality-check the tracker, survive a fresh-context challenger — then converge on one routed next step (drop it / park as ticket / `kickoff` / `bug-hunt`) with a handoff brief. Read-only until the routing is confirmed. |
+| [`kickoff`](./skills/kickoff/SKILL.md) | Idea / brainstorm brief / ticket → ready-for-review PR: decides plan depth itself (spec in the repo's spec location, or straight to code), implements with tests, then runs `deliver --no-merge` for checks, PR, reviewer, and the feedback loop. Never merges. |
+| [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal (or stop at ready-for-review with `--no-merge`). |
 | [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, close a now-duplicate fork PR as superseded, degrade to a single comment when you lack write access. Never merges. |
 | [`pr-polish`](./skills/pr-polish/SKILL.md) | Rewrite a PR's title/description so they match the branch as it stands and read top-down: problem → fix → details → verification. Verifies every claim (incl. referenced PRs' current state) before writing. Metadata-only. |
 | [`ticket-refresh`](./skills/ticket-refresh/SKILL.md) | `pr-polish` for a tracker ticket: re-verify its body against reality — resolve every linked PR/issue (following supersessions), check whether an "upstream" fix already ships in the installed version, and rewrite claims the world has overtaken, then post one comment so watchers learn what changed. Body + comment only; never touches Status/Assignee. |
@@ -24,7 +26,7 @@ read what a counterparty changed in a contract.
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 | [`zoom-out`](./skills/zoom-out/SKILL.md) | Break mid-task tunnel vision: restate the goal from the original request, mark sunk work ignorable, measure the decision space, get a fresh-context second opinion (subagent that never sees the current approach), present 2–3 options-in-kind + a recommendation. Analysis only until the user picks. |
 
-`explain`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `brainstorm`, `kickoff`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -98,6 +100,13 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   body, and to post the comment recording the rewrite — but never move its status. Say if the tracker's
   comments are unusable (no API, or nobody reads them); the skill skips the comment
   rather than folding the narration back into the body.
+- **Specs** — where feature specs and design docs live: a repo directory + naming pattern
+  (e.g. `docs/specs/YYYY-MM-DD-slug.md`) or a tracker/Notion location, plus how deep a spec
+  is expected to go. `kickoff` writes its spec there when the work warrants one, and
+  `brainstorm` keeps its handoff briefs beside them (`<specs dir>/briefs/`). Without the
+  knob or a discoverable convention, `kickoff` writes the plan into the tracker ticket
+  itself (when a Tracker is configured) or the PR description, and `brainstorm` falls back
+  to `.context/briefs/` when `.context/` exists (otherwise it asks where briefs go).
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
 - **Review landmines** (`review-queue`) — standing repo-specific checks every PR reviewer
   agent must apply (perf-sensitive paths, known CI false-fails, encryption/tenancy rules),

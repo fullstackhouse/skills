@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests) to front-load what CI would catch, open or update a PR, request a reviewer (or re-review if one already exists), address the feedback, then auto-merge if changes since invocation are minimal. CI is slow; do not lean on it as a first pass.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests) to front-load what CI would catch, open or update a PR, request a reviewer (or re-review if one already exists), address the feedback, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead. CI is slow; do not lean on it as a first pass.
 ---
 
 # deliver
@@ -8,6 +8,8 @@ description: Deliver the work on the current branch — run all relevant local c
 You are running the **deliver** skill. Goal: take whatever is on the current branch and get it merged with as few CI round-trips as possible.
 
 CI is slow and every avoidable push is a real cost — front-load all checks locally before pushing.
+
+**No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this), everything through Phase 7/7b runs unchanged — checks, confidentiality gate, PR, reviewer, feedback and CI loops, the tracker's move to *in review* — but Phase 8's merge condition is forced false: leave the PR ready for review, skip Phase 8b, and report. The merge decision stays with the human.
 
 ## Project specifics — read these first
 
@@ -227,6 +229,8 @@ Hard stop conditions (escalate to user, don't keep grinding):
 Do not merge while any required check is failing or pending. `--admin` bypasses required reviews, not failing CI (see Hard rules).
 
 ### 8. Auto-merge decision
+
+In no-merge mode this decision is already made: the condition is false by definition — surface the PR's state as ready-for-review and stop (Phase 8b never runs).
 
 If not much has changed since the skill started, just merge. "Not much" means the work since Phase 0's `start-sha` is mostly review-feedback fixups, not new functionality.
 
