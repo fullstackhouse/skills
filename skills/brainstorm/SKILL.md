@@ -89,12 +89,14 @@ Brief file: `<briefs dir>/{YYYY-MM-DD}-{kebab-slug}.md` —
 End the final message with these machine-parseable lines (an orchestrator or the user acts on them):
 
 ```
-Next: none                          ← ramp 1
-Next: /kickoff "<goal>" — brief: <path>   ← ramp 3
-Next: /bug-hunt "<report>"          ← ramp 4
-Brief: <repo-relative path>         ← whenever a brief was written
-Ticket: <url>                       ← ramp 2
+Next: none                                ← ramp 1
+Next: /kickoff "<goal> — brief: <path>"   ← ramp 3
+Next: /bug-hunt "<report>"                ← ramp 4
+Brief: <repo-relative path>               ← whenever a brief was written
+Ticket: <url>                             ← ramp 2
 ```
+
+On ramp 3 the brief reference rides *inside* the quoted argument, so the `Next:` line alone is a complete, copy-pasteable invocation; the `Brief:` line repeats the bare path for tooling that wants it without parsing args.
 
 On ramp 3, if the user said "start now", invoke the `kickoff` skill after emitting the lines — never before the Phase 5 confirmation.
 

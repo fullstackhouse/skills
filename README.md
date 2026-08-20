@@ -104,9 +104,9 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   (e.g. `docs/specs/YYYY-MM-DD-slug.md`) or a tracker/Notion location, plus how deep a spec
   is expected to go. `kickoff` writes its spec there when the work warrants one, and
   `brainstorm` keeps its handoff briefs beside them (`<specs dir>/briefs/`). Without the
-  knob or a discoverable convention, `kickoff` embeds the plan in the tracker ticket (when
-  a Tracker is configured) or the PR description, and `brainstorm` falls back to
-  `.context/briefs/`.
+  knob or a discoverable convention, `kickoff` writes the plan into the tracker ticket
+  itself (when a Tracker is configured) or the PR description, and `brainstorm` falls back
+  to `.context/briefs/` when `.context/` exists (otherwise it asks where briefs go).
 - **PR reviewer bot** login (default `copilot-pull-request-reviewer`).
 - **Review landmines** (`review-queue`) — standing repo-specific checks every PR reviewer
   agent must apply (perf-sensitive paths, known CI false-fails, encryption/tenancy rules),

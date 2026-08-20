@@ -13,7 +13,7 @@ This is `deliver`'s front half's missing counterpart: `deliver` ships a branch t
 
 This skill is repo-agnostic. Gather from the consuming repo's `CLAUDE.md` / `AGENTS.md` (the `## Skill profile` section is the curated source):
 
-- **Specs** — where feature specs live (repo directory + naming pattern, or a tracker/Notion location) and how deep they're expected to go. No knob → look for a discoverable convention (`docs/specs/`, `specs/`, `rfcs/`, `design/`); none → the plan embeds in the tracker ticket (when a Tracker is configured) or the PR description.
+- **Specs** — where feature specs live (repo directory + naming pattern, or a tracker/Notion location) and how deep they're expected to go. No knob → look for a discoverable convention (`docs/specs/`, `specs/`, `rfcs/`, `design/`); none → the plan embeds in the tracker ticket (when a Tracker is configured) or the PR description. Writing it into the ticket is **this skill's own write** in Phase 2 — `deliver` moves ticket statuses, never bodies.
 - **Tracker** — used to link the ticket that spawned this work; status moves are `deliver`'s job, not yours.
 - **Check commands, reviewer, baseBranch** — all consumed by `deliver`; you don't need to re-derive them, but the implementation must follow the same repo conventions its checks enforce.
 
@@ -32,13 +32,13 @@ One of:
 
 Read the input and the relevant code. Write down: the goal in one sentence, the observable outcome that proves it works (define verification *before* implementing), known constraints, and open unknowns.
 
-For each unknown: if the repo/docs/ticket can answer it, answer it there. If it's a **product decision that materially forks the work** and the input doesn't settle it, ask the user now — one batched round of questions, then proceed. Everything else: pick the reasonable default and **record the assumption** (in the spec or the PR description) instead of asking. The point of this skill is that the user fed in an idea and walked away.
+For each unknown: if the repo/docs/ticket can answer it, answer it there. If it's a **product decision that materially forks the work** and the input doesn't settle it, ask the user now — one batched round of questions, then proceed. Everything else: pick the reasonable default and **record the assumption** in the Phase 2 plan artifact — the spec, the ticket body, or the PR description — instead of asking. The point of this skill is that the user fed in an idea and walked away.
 
 ### 2. Depth decision — spec or straight to code?
 
 Go **straight to code** when a reviewer wouldn't want a design to react to: the change is small and local, its shape is obvious from the input, and naming the affected areas took no real work.
 
-**Write a spec first** when any of these hold: multiple plausible approaches with different trade-offs; new module/service/schema boundaries; naming the affected areas took actual investigation; or the brief/ticket flags design risk. Put it at the Specs location (see Project specifics). Keep it lean — problem, chosen approach and the alternative it beat, affected areas, verification plan, recorded assumptions. Carry the brief's Resolved unknowns in verbatim; they are answers, not suggestions.
+**Write a spec first** when any of these hold: multiple plausible approaches with different trade-offs; new module/service/schema boundaries; naming the affected areas took actual investigation; or the brief/ticket flags design risk. Put it at the Specs location (see Project specifics) — when that location is the tracker, update the source ticket's body (or post a comment, per the repo's tracker conventions) yourself now; when it's the PR description, carry the plan into the PR body at Phase 5. Keep it lean — problem, chosen approach and the alternative it beat, affected areas, verification plan, recorded assumptions. Carry the brief's Resolved unknowns in verbatim; they are answers, not suggestions.
 
 A spec that lives in the repo gets committed on the work branch, so it ships (and gets reviewed) with the implementation.
 
