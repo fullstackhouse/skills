@@ -133,11 +133,16 @@ REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND ma
 **Record a baseline first.** On a re-request the bot's previous review is already on the PR, so without this Phase 6's first poll returns instantly with the *old* review and Phase 7 addresses feedback written against an earlier HEAD:
 
 ```bash
-PRIOR=$(gh pr view <N> --json reviews \
-  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\")] | sort_by(.submittedAt) | last | .submittedAt // \"\"")
+export REVIEWER
+export PRIOR=$(gh pr view <N> --json reviews \
+  --jq '[.reviews[] | select(.author.login == env.REVIEWER)] | sort_by(.submittedAt) | last | .submittedAt // ""')
 ```
 
 "A review exists" and "a review of this HEAD exists" are different questions, and only the second one may gate a merge.
+
+**Read the login from `env`, in a single-quoted filter — never interpolate the shell variable into the `--jq` string.** A jq filter carrying `\"$REVIEWER\"` has to survive two levels of quoting, and it is re-quoted every time the query is pasted into a loop, a `watch`, or a background job. Get it wrong and the filter matches nothing, forever, in silence — indistinguishable from a bot that never reviewed, which is how a poll ends up outliving a review that landed two minutes in. `env.REVIEWER` needs no escaping and cannot be re-broken downstream.
+
+**Keep the `// ""`, and never drop it as redundant.** Everything jq reads from `env` is a *string*, so the empty-array case has to be normalised before it leaves this command: without the default, jq prints the missing timestamp as the literal `null`, `PRIOR` becomes the four-character string `"null"`, and Phase 6 compares timestamps against it lexicographically — where `"2026-…" > "null"` is **false**, because `2` sorts below `n`. The first review on a fresh PR would then never match, silently, which is the failure this whole pattern exists to remove. `""` sorts below every timestamp and is the only value that behaves.
 
 **Request, or re-request, with the same command.** `gh pr edit --add-reviewer` both adds a reviewer and re-requests one who has already reviewed, and a re-request is what triggers a fresh review against the new HEAD:
 
@@ -174,11 +179,16 @@ Excluding the author is not cosmetic either: whoever runs this skill is usually 
 The bot typically takes 1–5 minutes. Poll, don't busy-wait:
 
 ```bash
+export HEAD_OID=$(gh pr view <N> --json headRefOid --jq .headRefOid)
 gh pr view <N> --json reviews \
-  --jq "[.reviews[] | select(.author.login == \"$REVIEWER\" and .submittedAt > \"$PRIOR\")] | sort_by(.submittedAt) | last"
+  --jq '[.reviews[] | select(.author.login == env.REVIEWER and .submittedAt > env.PRIOR and .commit.oid == env.HEAD_OID)] | sort_by(.submittedAt) | last'
 ```
 
-Poll every ~60s for up to ~10 minutes, and require a review **newer than `$PRIOR`** — an earlier one is feedback against an earlier HEAD.
+Poll every ~60s for up to ~10 minutes. All three values come from `env` — `REVIEWER` and `PRIOR` exported in Phase 5, `HEAD_OID` just above — so the filter stays single-quoted: this query gets copied into a loop or a background watcher, which is exactly where an interpolated, escaped filter breaks and then fails silently.
+
+**`submittedAt` alone does not answer "reviewed at this HEAD".** A review requested before a push lands *after* it — newer than `$PRIOR`, and still written against superseded code. Each review carries the commit it read (`.commit.oid`), so gate on that; a "no new comments" verdict on the commit your fix replaced says nothing about the fix. Read such a review anyway — its findings may well still apply — but don't let it satisfy the gate, and re-request against the new HEAD.
+
+A poll loop must also distinguish jq's `null` (no match yet) from an **empty** result (a failed call, a broken filter): `[ "$R" != "null" ]` alone treats the empty string as a hit and exits the loop on the first hiccup, reporting no review while the bot is still working. Test for both.
 
 If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
 
@@ -210,7 +220,17 @@ In parallel with waiting for the review, monitor CI:
 gh pr checks <N> --watch
 ```
 
-If any check fails, **fix it and keep going** — don't stop and hand back to the user. Workflow:
+**Confirm a "failed" entry against the head commit before believing it.** `gh pr checks` renders a job's `skipped` conclusion in the same bucket as a failure, so a workflow's `if: failure()` notification job — which is skipped on every successful run, by design — prints as `[FAIL]` on a perfectly green PR:
+
+```bash
+gh api --paginate \
+  "repos/$SLUG/commits/$(gh pr view <N> --json headRefOid --jq .headRefOid)/check-runs?per_page=100" \
+  --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"'
+```
+
+Read that list both ways: a `skipped` alert job is not a failure, and a *required* gate that was filtered out of this run (a path filter, a `paths-ignore`) is not a pass — it's a green banner over a job that never ran. Neither is a reason to stop; both change what you do next.
+
+If a check genuinely fails, **fix it and keep going** — don't stop and hand back to the user. Workflow:
 
 1. Pull the failing job's logs: `gh run view <run-id> --log-failed` (use `gh pr checks <N> --json` to find the run id).
 2. Diagnose the root cause. Common buckets:
@@ -257,7 +277,7 @@ Merge condition (ALL must hold):
   A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself — that silently changes what the approvals on record applied to. AND
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
-- All CI checks on the PR are green (`gh pr checks <N>` — wait for them), AND
+- All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 7b before calling it red), AND
 - The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads.
 
 If the condition holds → merge:
@@ -267,6 +287,14 @@ gh pr merge <N> --squash --delete-branch        # add --admin only if ownerCanSe
 ```
 
 Use `--admin` **only** when the `## Skill profile` says `ownerCanSelfMerge: true` (the user owns the repo and doesn't need peer approval). Otherwise merge normally and let required reviews apply; if a required review blocks, surface that and stop.
+
+**A non-zero exit is not proof the merge failed — check the PR, never retry blind.** `--delete-branch` also deletes the *local* branch, and that step fails when another worktree has the base checked out (`fatal: 'main' is already used by worktree at …`), long after the merge itself succeeded server-side:
+
+```bash
+gh pr view <N> --json state,mergedAt,mergeCommit
+```
+
+`MERGED` means done — finish Phase 8b and report it. Re-running `gh pr merge` on a merged PR instead pushes the deleted branch back and can leave a stray merge commit on the base, which is published history you must not clean up alone. The same read settles a merge that times out or drops its connection.
 
 If the condition doesn't hold (substantial new code, failing checks, unresolved threads, or no review yet) → don't merge. Surface the state to the user and stop.
 

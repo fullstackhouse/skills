@@ -1,7 +1,7 @@
 {
   "name": "fsh",
   "description": "Full Stack House Claude Code skills (idea brainstorming & kickoff, delivery workflow, bug/flake hunting, change explanation, status reporting, design, document redlines, cerber PR reviews)",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "author": {
     "name": "Full Stack House",
     "url": "https://fullstack.house"
