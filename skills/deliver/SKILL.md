@@ -184,7 +184,7 @@ gh pr view <N> --json reviews \
   --jq '[.reviews[] | select(.author.login == env.REVIEWER and .submittedAt > env.PRIOR and .commit.oid == env.HEAD_OID)] | sort_by(.submittedAt) | last'
 ```
 
-Poll every ~60s for up to ~10 minutes. All three values come from `env` (exported in Phase 5) so the filter stays single-quoted: this query gets copied into a loop or a background watcher, which is exactly where an interpolated, escaped filter breaks and then fails silently.
+Poll every ~60s for up to ~10 minutes. All three values come from `env` — `REVIEWER` and `PRIOR` exported in Phase 5, `HEAD_OID` just above — so the filter stays single-quoted: this query gets copied into a loop or a background watcher, which is exactly where an interpolated, escaped filter breaks and then fails silently.
 
 **`submittedAt` alone does not answer "reviewed at this HEAD".** A review requested before a push lands *after* it — newer than `$PRIOR`, and still written against superseded code. Each review carries the commit it read (`.commit.oid`), so gate on that; a "no new comments" verdict on the commit your fix replaced says nothing about the fix. Read such a review anyway — its findings may well still apply — but don't let it satisfy the gate, and re-request against the new HEAD.
 
