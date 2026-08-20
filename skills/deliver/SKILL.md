@@ -135,12 +135,14 @@ REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND ma
 ```bash
 export REVIEWER
 export PRIOR=$(gh pr view <N> --json reviews \
-  --jq '[.reviews[] | select(.author.login == env.REVIEWER)] | sort_by(.submittedAt) | last | .submittedAt')
+  --jq '[.reviews[] | select(.author.login == env.REVIEWER)] | sort_by(.submittedAt) | last | .submittedAt // ""')
 ```
 
 "A review exists" and "a review of this HEAD exists" are different questions, and only the second one may gate a merge.
 
-**Read the login from `env`, in a single-quoted filter — never interpolate the shell variable into the `--jq` string.** A jq filter carrying `\"$REVIEWER\"` has to survive two levels of quoting, and it is re-quoted every time the query is pasted into a loop, a `watch`, or a background job. Get it wrong and the filter matches nothing, forever, in silence — indistinguishable from a bot that never reviewed, which is how a poll ends up outliving a review that landed two minutes in. `env.REVIEWER` needs no escaping and cannot be re-broken downstream. An unset `PRIOR` is `null`, which every timestamp compares greater than — so the first-review case needs no `// ""` default.
+**Read the login from `env`, in a single-quoted filter — never interpolate the shell variable into the `--jq` string.** A jq filter carrying `\"$REVIEWER\"` has to survive two levels of quoting, and it is re-quoted every time the query is pasted into a loop, a `watch`, or a background job. Get it wrong and the filter matches nothing, forever, in silence — indistinguishable from a bot that never reviewed, which is how a poll ends up outliving a review that landed two minutes in. `env.REVIEWER` needs no escaping and cannot be re-broken downstream.
+
+**Keep the `// ""`, and never drop it as redundant.** Everything jq reads from `env` is a *string*, so the empty-array case has to be normalised before it leaves this command: without the default, jq prints the missing timestamp as the literal `null`, `PRIOR` becomes the four-character string `"null"`, and Phase 6 compares timestamps against it lexicographically — where `"2026-…" > "null"` is **false**, because `2` sorts below `n`. The first review on a fresh PR would then never match, silently, which is the failure this whole pattern exists to remove. `""` sorts below every timestamp and is the only value that behaves.
 
 **Request, or re-request, with the same command.** `gh pr edit --add-reviewer` both adds a reviewer and re-requests one who has already reviewed, and a re-request is what triggers a fresh review against the new HEAD:
 
@@ -216,7 +218,8 @@ gh pr checks <N> --watch
 **Confirm a "failed" entry against the head commit before believing it.** `gh pr checks` renders a job's `skipped` conclusion in the same bucket as a failure, so a workflow's `if: failure()` notification job — which is skipped on every successful run, by design — prints as `[FAIL]` on a perfectly green PR:
 
 ```bash
-gh api "repos/$SLUG/commits/$(gh pr view <N> --json headRefOid --jq .headRefOid)/check-runs" \
+gh api --paginate \
+  "repos/$SLUG/commits/$(gh pr view <N> --json headRefOid --jq .headRefOid)/check-runs?per_page=100" \
   --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"'
 ```
 
