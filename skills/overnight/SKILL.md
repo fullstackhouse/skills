@@ -46,7 +46,13 @@ Build the dependency graph: item B depends on item A when B reads something A cr
 
 - **A graph, not a chain.** Independent roots each start their own stack off the base branch; only real dependencies produce a stacked base. Do not serialise items that have no reason to be serialised — a needlessly deep stack means a needlessly deep rebase when one link is rejected.
 - Order within a chain: the item everything else depends on goes first.
-- **Preflight the base branch.** Every chain sits on it, so if it is red the whole night is blocked on the first item's checks: `gh pr checks` on the latest commit, or the repo's own CI query. A red base is not a reason to refuse — it is the first thing to say in Phase 3, along with the fix if it is known.
+- **Preflight the base branch.** Every chain sits on it, so if it is red the whole night is blocked on the first item's checks. Query the base **by name** — a bare `gh pr checks` reports on the current branch's PR, which is a different question:
+
+  ```bash
+  gh run list --branch "<base branch>" --limit 1 --json conclusion,status,workflowName
+  ```
+
+  Read a `skipped` job as skipped, not failed: a notify-on-failure workflow is skipped on every green run, and treating it as red would cancel a healthy night. A genuinely red base is not a reason to refuse either — it is the first thing to say in Phase 3, along with the fix if it is known.
 
 ### 3. The plan round — the last interaction
 
@@ -68,7 +74,9 @@ Per item, in stack order:
 
 **On failure, cut the branch, not the night.** When an item's gate cannot be made green, or it hits one of `deliver`'s hard stops, that item and **its descendants** stop — they are stacked on it and cannot be built. Every independent chain keeps running. Note where each chain stopped and why; never publish a half-finished item to keep a number up.
 
-**Never ask.** An unanswerable blocker parks that chain cleanly — commit what exists, push, record it — and the run continues elsewhere. The user is asleep; a question is a stalled night.
+**Never ask.** An unanswerable blocker parks that chain cleanly and the run continues elsewhere. The user is asleep; a question is a stalled night.
+
+Parking means *recording*, not publishing. Whatever `kickoff` and `deliver` already committed and pushed for that item stays as it is; this skill adds only the report line saying where the chain stopped and why. It never commits or pushes on its own — publishing has exactly one owner (hard rule 4), and an orchestrator pushing behind `deliver`'s back would bypass the confidentiality gate that lives there.
 
 ### 5. Report
 
