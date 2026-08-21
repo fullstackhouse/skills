@@ -22,7 +22,14 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
   ```
-- **PR base** — where this PR is meant to land. Three sources, first hit wins: the **`--base`** argument, then the `## Skill profile` key **`baseBranch`** (a repo that ships through a release or integration branch), then the default branch from the `gh repo view` above. Phase 0 resolves it into `BASE_REF`; every later phase reads that variable rather than re-deriving a base of its own. Ignore a literal `"auto"` in the profile — it means "detect", not a branch called `auto`.
+- **PR base** — where this PR is meant to land. **The GitHub default branch is the last resort, not the first**: plenty of repos merge into `develop`, `next`, or a release line while `defaultBranchRef` still says `main`. First hit wins:
+  1. the **`--base`** argument,
+  2. the repo's agent config `baseBranch` (e.g. `.ai/agentic.config.json`),
+  3. the `## Skill profile` key **`baseBranch`** in the root `CLAUDE.md` / `AGENTS.md`,
+  4. what the PR template or CONTRIBUTING says ("Open PRs against `develop`"),
+  5. the default branch from the `gh repo view` above.
+
+  Same order `upstream-pr` uses, so the two skills cannot disagree about where a repo's work lands. Ignore a literal `"auto"` at tiers 2–3 — it means "detect", not a branch called `auto`. Phase 0 resolves it once into `BASE_REF`; every later phase reads that variable rather than re-deriving a base of its own, and the report states which tier the value came from whenever it was not the default branch.
 - **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular), which must be the bot's **login** (`copilot-pull-request-reviewer`, the default) and not an alias like `@copilot`. One value covers requesting and recognising: `gh pr edit` accepts a login, and `.author.login` is what a review carries.
 - **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to fall back to when no bot review arrives (Phase 5). Unset, Phase 5 derives a candidate from recent merged PRs.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
@@ -47,7 +54,9 @@ Resolve the PR base once, here, and export it — Phases 1, 2b and 4 all read it
 
 ```bash
 DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
-export BASE_REF="${ARG_BASE:-${PROFILE_BASE_BRANCH:-$DEFAULT}}"    # --base → profile baseBranch → default
+CONFIG_BASE=$(jq -r '.baseBranch // empty' .ai/agentic.config.json 2>/dev/null | grep -v '^auto$')
+# --base → agent config → profile → PR template/CONTRIBUTING (read, not scripted) → default
+export BASE_REF="${ARG_BASE:-${CONFIG_BASE:-${PROFILE_BASE_BRANCH:-$DEFAULT}}}"
 git rev-parse --verify "$BASE_REF" >/dev/null || git fetch origin "$BASE_REF"
 echo "$BASE_REF" > .context/deliver/base
 ```
