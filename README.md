@@ -11,7 +11,7 @@ read what a counterparty changed in a contract.
 | [`explain`](./skills/explain/SKILL.md) | Explain an existing change (working tree / branch / PR / commit) in plain language with a clearly-hedged merge recommendation. Read-only. |
 | [`brainstorm`](./skills/brainstorm/SKILL.md) | Divergent conversation before any artifact exists: question the idea, weigh alternatives incl. building nothing, reality-check the tracker, survive a fresh-context challenger — then converge on one routed next step (drop it / park as ticket / `kickoff` / `bug-hunt`) with a handoff brief. Read-only until the routing is confirmed. |
 | [`kickoff`](./skills/kickoff/SKILL.md) | Idea / brainstorm brief / ticket → ready-for-review PR: decides plan depth itself (spec in the repo's spec location, or straight to code), implements with tests, then runs `deliver --no-merge` for checks, PR, reviewer, and the feedback loop. Never merges. |
-| [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal (or stop at ready-for-review with `--no-merge`). |
+| [`deliver`](./skills/deliver/SKILL.md) | Front-load CI locally, open/update a PR, request a reviewer, address feedback, auto-merge if changes since invocation are minimal (or stop at ready-for-review with `--no-merge`). `--base <branch>` targets a parent branch instead of the repo default, so a stacked PR shows only its own increment. |
 | [`upstream-pr`](./skills/upstream-pr/SKILL.md) | Open/update a cross-repository (fork) PR: resolve the fork/upstream/base/permission triangle explicitly, push to the fork, target the upstream's real base branch, close a now-duplicate fork PR as superseded, degrade to a single comment when you lack write access. Never merges. |
 | [`pr-polish`](./skills/pr-polish/SKILL.md) | Rewrite a PR's title/description so they match the branch as it stands and read top-down: problem → fix → details → verification. Verifies every claim (incl. referenced PRs' current state) before writing. Metadata-only. |
 | [`ticket-refresh`](./skills/ticket-refresh/SKILL.md) | `pr-polish` for a tracker ticket: re-verify its body against reality — resolve every linked PR/issue (following supersessions), check whether an "upstream" fix already ships in the installed version, and rewrite claims the world has overtaken, then post one comment so watchers learn what changed. Body + comment only; never touches Status/Assignee. |
@@ -116,7 +116,9 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   (default: auto-detected from the branch's remote / `@{push}` / remote classification).
 - **baseBranch** — the PR base when it differs from the GitHub default branch
   (default: auto-detected — repo agent config → this profile → CONTRIBUTING/PR template →
-  default branch).
+  default branch). This is the repo's standing default; for a single run, `deliver --base
+  <branch>` and `kickoff --base <branch>` override it, which is how a stacked PR targets
+  its parent instead of the base branch.
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),

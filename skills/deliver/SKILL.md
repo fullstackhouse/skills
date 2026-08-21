@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests) to front-load what CI would catch, open or update a PR, request a reviewer (or re-review if one already exists), address the feedback, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead. CI is slow; do not lean on it as a first pass.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests) to front-load what CI would catch, open or update a PR, request a reviewer (or re-review if one already exists), address the feedback, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, and --base to target a branch other than the repo default (stacked PRs). CI is slow; do not lean on it as a first pass.
 ---
 
 # deliver
@@ -11,6 +11,8 @@ CI is slow and every avoidable push is a real cost — front-load all checks loc
 
 **No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this), everything through Phase 7/7b runs unchanged — checks, confidentiality gate, PR, reviewer, feedback and CI loops, the tracker's move to *in review* — but Phase 8's merge condition is forced false: leave the PR ready for review, skip Phase 8b, and report. The merge decision stays with the human.
 
+**Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 8's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
+
 ## Project specifics — read these first
 
 This skill is repo-agnostic. The concrete commands, reviewer, and merge policy come from the repository you're running in. Before Phase 1, gather:
@@ -20,6 +22,14 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
   ```
+- **PR base** — where this PR is meant to land. **The GitHub default branch is the last resort, not the first**: plenty of repos merge into `develop`, `next`, or a release line while `defaultBranchRef` still says `main`. First hit wins:
+  1. the **`--base`** argument,
+  2. the repo's agent config `baseBranch` (e.g. `.ai/agentic.config.json`),
+  3. the `## Skill profile` key **`baseBranch`** in the root `CLAUDE.md` / `AGENTS.md`,
+  4. what the PR template or CONTRIBUTING says ("Open PRs against `develop`"),
+  5. the default branch from the `gh repo view` above.
+
+  Same order `upstream-pr` uses, so the two skills cannot disagree about where a repo's work lands. Ignore a literal `"auto"` at tiers 2–3 — it means "detect", not a branch called `auto`. Phase 0 resolves it once into `BASE_REF`; every later phase reads that variable rather than re-deriving a base of its own, and the report states which tier the value came from whenever it was not the default branch.
 - **PR reviewer bot** — the `## Skill profile` key **`reviewer`** (singular), which must be the bot's **login** (`copilot-pull-request-reviewer`, the default) and not an alias like `@copilot`. One value covers requesting and recognising: `gh pr edit` accepts a login, and `.author.login` is what a review carries.
 - **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to fall back to when no bot review arrives (Phase 5). Unset, Phase 5 derives a candidate from recent merged PRs.
 - **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 8). Default: false (don't bypass required reviews).
@@ -40,11 +50,26 @@ git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 ```
 
-Refuse to run on the default branch. If the working tree has uncommitted changes, surface them and ask the user before continuing — don't silently `git add -A`.
+Resolve the PR base once, here, and export it — Phases 1, 2b and 4 all read it, and a base re-derived per phase is how a run ends up checking one range and publishing another:
+
+```bash
+DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+CONFIG_BASE=$(jq -r '.baseBranch // empty' .ai/agentic.config.json 2>/dev/null | grep -v '^auto$')
+# --base → agent config → profile → PR template/CONTRIBUTING (read, not scripted) → default
+export BASE_REF="${ARG_BASE:-${CONFIG_BASE:-${PROFILE_BASE_BRANCH:-$DEFAULT}}}"
+git rev-parse --verify "$BASE_REF" >/dev/null || git fetch origin "$BASE_REF"
+echo "$BASE_REF" > .context/deliver/base
+```
+
+**A `--base` that doesn't resolve is a stop, not a fallback.** Silently dropping back to the default branch would open a PR whose diff replays its parent's commits — reviewable-looking and wrong. If the branch exists on neither the local repo nor the remote, say so and stop.
+
+Refuse to run on the default branch, and refuse when `BASE_REF` is the branch you're on — a PR cannot target itself. If the working tree has uncommitted changes, surface them and ask the user before continuing — don't silently `git add -A`.
 
 ### 1. Scope detection
 
-Look at `git diff <default-branch>...HEAD --name-only` and bucket the touched files by package/workspace (top-level dir, monorepo workspace, or whatever the repo's structure is). Only run the checks for packages that actually changed — don't run one package's tooling for a branch that didn't touch it.
+Look at `git diff "$BASE_REF"...HEAD --name-only` and bucket the touched files by package/workspace (top-level dir, monorepo workspace, or whatever the repo's structure is). Only run the checks for packages that actually changed — don't run one package's tooling for a branch that didn't touch it.
+
+On a stacked run that range is deliberately narrow: the parent's files were already checked on the parent's PR. Don't widen it back to the default branch to be safe — that re-runs the parent's whole check surface on every child in the stack, which is the cost stacking exists to avoid.
 
 ### 2. Local checks (front-load CI)
 
@@ -70,8 +95,8 @@ Scan the diff, the commit messages, and the PR body before they are published:
 
 ```bash
 TERMS='acme|acmecorp|acme_|ACME-'                                  # from what the branch drew on
-git diff "$DEFAULT_BRANCH"...HEAD | grep -inE "$TERMS"
-git log "$DEFAULT_BRANCH"..HEAD --format='%B' | grep -inE "$TERMS"
+git diff "$BASE_REF"...HEAD | grep -inE "$TERMS"
+git log "$BASE_REF"..HEAD --format='%B' | grep -inE "$TERMS"
 ```
 
 Grep is the floor — also read the prose the branch adds (specs, READMEs, comments). On a hit before pushing: rewrite (amend/rebase is fine, nothing is published yet). On a hit in something already pushed or public: **stop and tell the user** — never force-push to hide it, and never decide alone whether to rewrite published history.
@@ -88,8 +113,10 @@ If the branch isn't pushed yet, push with `-u`. If it is, just push.
 gh pr view --json number,url,reviewDecision,reviews,headRefOid 2>/dev/null
 ```
 
-- No PR → `gh pr create --base <default-branch>`. Title in Conventional Commits style stating the plain-language outcome. Write the body top-down per the **pr-polish** skill's structure: context/task line → the problem (observable impact, no code identifiers) → the fix (root cause + what the PR does) → technical details → verification → follow-ups.
+- No PR → `gh pr create --base "$BASE_REF"`. Title in Conventional Commits style stating the plain-language outcome. Write the body top-down per the **pr-polish** skill's structure: context/task line → the problem (observable impact, no code identifiers) → the fix (root cause + what the PR does) → technical details → verification → follow-ups.
 - PR exists → the push updated the code, but check the title/description still tell the truth: if the work drifted since they were written (rebase, review rework, scope change, a referenced PR merged), run the **pr-polish** skill before requesting review — a stale description misleads the reviewer.
+
+**An existing PR's base is not yours to change.** If its `baseRefName` differs from `BASE_REF` — a stack re-run after the parent landed and the forge retargeted the child, or a `--base` that disagrees with what is on record — report the mismatch and continue against the base the PR already has. Retargeting silently changes what every approval and every review comment on that PR applied to; only a human may decide that.
 
 Save the PR number to `.context/deliver/pr-number`.
 
@@ -274,7 +301,9 @@ Merge condition (ALL must hold):
 
   The short-circuit is load-bearing, not an optimisation: `--head` matches on branch *name* and includes cross-repository PRs, so one open fork PR whose head branch is called `main` would otherwise mark **every** PR in the repo as stacked and disable auto-merge outright.
 
-  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself — that silently changes what the approvals on record applied to. AND
+  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself — that silently changes what the approvals on record applied to.
+
+  On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up, and each child's base is retargeted by the forge as its parent lands. Report it as `blocked-on-parent-PR` with the parent's number — that is a healthy stack waiting its turn, not a failure. AND
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 7b before calling it red), AND
@@ -308,7 +337,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 

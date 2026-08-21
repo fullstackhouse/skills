@@ -15,7 +15,7 @@ This skill is repo-agnostic. Gather from the consuming repo's `CLAUDE.md` / `AGE
 
 - **Specs** — where feature specs live (repo directory + naming pattern, or a tracker/Notion location) and how deep they're expected to go. No knob → look for a discoverable convention (`docs/specs/`, `specs/`, `rfcs/`, `design/`); none → the plan embeds in the tracker ticket (when a Tracker is configured) or the PR description. Writing it into the ticket is **this skill's own write** in Phase 2 — `deliver` moves ticket statuses, never bodies.
 - **Tracker** — used to link the ticket that spawned this work; status moves are `deliver`'s job, not yours.
-- **Check commands, reviewer, baseBranch** — all consumed by `deliver`; you don't need to re-derive them, but the implementation must follow the same repo conventions its checks enforce.
+- **Check commands, reviewer, baseBranch** — all consumed by `deliver`; you don't need to re-derive them, but the implementation must follow the same repo conventions its checks enforce. The one exception is `--base` below: when the caller names a base, this skill has to know it too, because it decides what to branch *from*.
 
 ## Arguments
 
@@ -25,6 +25,10 @@ One of:
 - **A tracker ticket URL/ID** — read it; treat its body as the goal and its claims as claims.
 - **A free-text idea** — restate the goal in one sentence before proceeding.
 - **Empty** — ask what to kick off. Do not guess.
+
+Plus one optional modifier:
+
+- **`--base <branch>`** — build this work on top of `<branch>` instead of the repo's base branch, and target it as the PR's base. Use it to stack: `<branch>` is typically another PR that is still open, and the resulting PR shows only this step's increment. Phase 3 branches from it and Phase 5 forwards it to `deliver` — both, or the branch and the PR disagree about what this work sits on.
 
 ## Phases
 
@@ -46,6 +50,8 @@ A spec that lives in the repo gets committed on the work branch, so it ships (an
 
 Never work on the default branch. If the current checkout is already an isolated feature branch/worktree dedicated to this task (e.g. a Conductor workspace), use it; otherwise create a fresh branch off the base branch with a conventional name.
 
+With `--base <branch>`, that branch is what you branch from — fetch it first, and branch from the remote-tracking ref (`origin/<branch>`) rather than a local copy that may be stale. Reusing a checkout that is *not* descended from the requested base is the one case where "the current branch is already isolated" stops being good enough: the work would sit beside its parent instead of on top of it, and the PR would replay the parent's commits as if they were its own. Rebase onto the base, or branch fresh.
+
 ### 4. Implement
 
 Work the plan: implementation plus the tests that prove the Phase 1 verification, in the repo's own idiom (match surrounding code, comment density, naming). Commit in coherent Conventional Commits as you go — not one squashed blob, not thirty fixups. Respect the input's Non-goals: no gold-plating, no scope beyond the brief.
@@ -54,7 +60,7 @@ If mid-implementation the approach turns out wrong (the plan fights the codebase
 
 ### 5. Deliver — no-merge mode
 
-Invoke the **deliver** skill with `--no-merge`. It owns everything from here: scoped local checks, the confidentiality gate, push, PR open with a top-down body (link the source ticket; name the spec if one was written), reviewer request, the review-feedback and CI loops, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
+Invoke the **deliver** skill with `--no-merge` — and with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, push, PR open with a top-down body (link the source ticket; name the spec if one was written), reviewer request, the review-feedback and CI loops, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
 
 Do not reimplement any of that here, and never merge from this skill — not even when the diff is tiny and green. The merge decision is the human's by design.
 
