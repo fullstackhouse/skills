@@ -82,7 +82,7 @@ Parking means *recording*, not publishing. Whatever `kickoff` and `deliver` alre
 
 The deliverable is a stack the user can act on in the order it was built:
 
-- **The stack, in merge order**, per chain: item → PR URL → base → state (ready-for-review / blocked-on-parent-PR / awaiting-CI / stopped, with why). Say plainly that they merge **bottom-up**, and that each child retargets as its parent lands.
+- **The stack, in merge order**, per chain: item → PR URL → base → state (ready-for-review / blocked-on-parent-PR / awaiting-CI / stopped, with why). Say plainly that they merge **bottom-up**, and that **merging a parent must delete its branch** — the forge retargets a child only when the parent's branch is gone. Leave the parent branch alive and the child stays based on a merged-but-still-existing branch, where it merges cleanly into a dead ref and ships nothing. Tell the user to confirm each child's `baseRefName` before merging it.
 - **Every assumption made while they were asleep**, per item, with the reasoning — this is the first thing they should review, ahead of any diff.
 - **Where each chain stopped**, and what unblocking it needs.
 - **Follow-ups discovered and deliberately not done.**
