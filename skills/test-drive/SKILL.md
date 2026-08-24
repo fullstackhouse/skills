@@ -30,7 +30,7 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 ## Hard rules
 
-1. **Hand over nothing you haven't verified.** Every URL in the click route must have been fetched and returned 200. Every seeded record must have been read back. A route full of plausible-looking URLs you never requested is worse than no route.
+1. **Hand over nothing you haven't verified, and don't overclaim what you did verify.** Every URL in the click route must have been fetched *authenticated* and resolved. Every seeded record must have been read back through the API. But know the ceiling of a no-browser drive: you have proven the route resolves and the data persisted — **not** that the UI renders it. Say which of the two you checked; never let a 200 stand in for "the change works".
 2. **Never write to the database directly.** Seed through the real API or the real UI form. A row inserted behind the app skips validation, events, and index/search updates — the app then treats it differently from a real record, and the drive demonstrates something that can't happen in production.
 3. **Never seed against a database that isn't the throwaway one.** Before the first write, confirm the base URL is the instance this run booted (or one recorded in the ephemeral state file). If you can't confirm it, stop and ask. Seeding into someone's dev database is not recoverable by apologising.
 4. **Don't demo a build you can't attribute.** Prove the running instance was built from the commit under test, or restart it fresh. See the reuse trap in Phase 2 — it is the most likely way this skill lies to the user.
@@ -75,6 +75,15 @@ Map the error you get back to the rung you skipped:
 
 Note the trap in the third: `initialize` applies every migration successfully and *then* dies, so a codegen problem presents as a database one. Don't reach for `--verbose` on any of these — it adds log volume, not the missing artifact.
 
+**A throwaway instance runs in production mode, so dev-safe placeholders become hard failures.** `apps/mercato/.env` ships `JWT_SECRET=change-me-dev-secret` (straight out of `.env.example`), and the app's own production guard refuses to start on a known placeholder secret. The build succeeds, the server starts, and *then* it exits — the boot reports only `Application process exited before readiness check`, with the actual refusal buried in the app's stderr where you'll only see it under `--verbose`. Supply real secrets for the run instead:
+
+```bash
+JWT_SECRET=$(openssl rand -hex 32) AUTH_SECRET=$(openssl rand -hex 32) \
+  yarn mercato test:ephemeral
+```
+
+Pass them in the environment; **do not edit the repo's `.env`** — it's the user's file and this skill is read-only on the tree (Hard rule 6). Treat any "exited before readiness" as this class of problem until `--verbose` proves otherwise: the app process failing *after* a clean build is a configuration refusal far more often than a code fault.
+
 **Resolve the boot command** — first hit wins, and the last rung is a real probe rather than an assumption:
 
 1. Root `package.json` has `test:integration:ephemeral:start` → `yarn test:integration:ephemeral:start`. This is the Open Mercato monorepo; the script wraps `mercato test:ephemeral`.
@@ -112,6 +121,19 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$BAS
 ```
 
 A login that mints a token while every subsequent call returns 401 is exactly what this second request catches, and it's a failure the user would otherwise hit on their first click.
+
+**Fetching pages, not just the API.** An authenticated page needs the login *cookie*, not the bearer token — grab a jar on login and reuse it:
+
+```bash
+curl -s -c jar.txt -X POST "$BASE_URL/api/auth/login" \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret' -o /dev/null
+curl -s -b jar.txt -o /dev/null -w '%{http_code}\n' "$BASE_URL/backend/<path>"
+```
+
+Read the status codes correctly, or you'll report working things as broken and broken things as fine:
+- **`307`/`302` on an anonymous `/backend` fetch is correct** — that's the login redirect, not a failure.
+- **`200` with the cookie means the route exists and you're authenticated. It does not mean the change rendered.** The backend is a client-rendered app: the detail page returns over a megabyte of shell HTML and fetches its data afterwards, so grepping that HTML for your seeded values finds nothing even when everything works. Prove the data at the API layer and be explicit in the handover that rendering is the user's job to confirm.
 
 - Credentials the ephemeral env guarantees: `admin@acme.com`, `superadmin@acme.com`, `employee@acme.com`, all with password `secret` (it pins the init passwords). **The guarantee is ephemeral-only** — in a normal environment the companion account passwords are randomly generated, so never present these as universal.
 - The login route is rate-limited (a handful of attempts per minute per email). A `429` means back off, not bad credentials — do not loop on it.
@@ -168,13 +190,15 @@ The deliverable. Inline in your final message:
 | <identifier> | <URL> | <POST /api/...> |
 
 ## What this drive can't show
-- <e.g. no outbound email (delivery disabled); scheduled jobs won't fire (scheduler off,
-  though queue workers run, so job-backed flows do work); enterprise modules off;
-  CRUD API caching on — plus anything specific to this change>
+- Rendering is unverified — this drive proved the route resolves and the data persisted
+  through the API, not that the component paints it. That's the first thing to check.
+- <no outbound email (delivery disabled); scheduled jobs won't fire (scheduler off, though
+  queue workers run, so job-backed flows do work); enterprise modules off; CRUD API caching
+  on — plus anything specific to this change>
 ```
 
 Writing rules:
-- Every URL is one you fetched. Every record is one you read back.
+- Every URL is one you fetched authenticated. Every record is one you read back. Neither is a claim about what the screen looks like.
 - Say what the user should *see*, not just where to go. "Order ACME-1042 now shows a Partially shipped badge" beats "check the orders list".
 - Be honest about what you couldn't set up. A missing step named is useful; a missing step hidden wastes the user's afternoon.
 
@@ -189,5 +213,7 @@ Leave the instance running — that's the point of the skill. State plainly how 
 - Demo data is a starting point, never an assumption.
 - If the click route contains no seeded or named record, the drive probably shows nothing.
 - The first boot is slow. Warn before, not after.
+- "Exited before readiness" is the app refusing its own config, not the harness failing. Read its stderr before blaming the change.
+- A 200 from a client-rendered page proves routing and auth, nothing about the change. Don't grep the HTML and call it verified.
 - A URL you didn't fetch is a guess wearing a link.
 - If the change has no screen, say so — don't send the user hunting for one.
