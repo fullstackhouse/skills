@@ -9,6 +9,7 @@ read what a counterparty changed in a contract.
 | Skill | Purpose |
 |-------|---------|
 | [`explain`](./skills/explain/SKILL.md) | Explain an existing change (working tree / branch / PR / commit) in plain language with a clearly-hedged merge recommendation. Read-only. |
+| [`test-drive`](./skills/test-drive/SKILL.md) | `explain`'s hands-on counterpart: boot the change on a throwaway instance → prove login with a real HTTP round-trip → seed the data that makes it visible → hand back a click route with a live URL and credentials. Knows Open Mercato's `mercato test:ephemeral`; degrades to any repo's documented boot. No browser, posts nothing. |
 | [`brainstorm`](./skills/brainstorm/SKILL.md) | Divergent conversation before any artifact exists: question the idea, weigh alternatives incl. building nothing, reality-check the tracker, survive a fresh-context challenger — then converge on one routed next step (drop it / park as ticket / `kickoff` / `bug-hunt`) with a handoff brief. Read-only until the routing is confirmed. |
 | [`kickoff`](./skills/kickoff/SKILL.md) | Idea / brainstorm brief / ticket → ready-for-review PR: decides plan depth itself (spec in the repo's spec location, or straight to code), implements with tests, then runs `deliver --no-merge` for checks, PR, reviewer, and the feedback loop. Never merges. |
 | [`overnight`](./skills/overnight/SKILL.md) | A backlog → a stack of ready-for-review PRs, one per item: classify each item's *decision state*, order them into a dependency graph, batch every open question across every item into one interactive round, then run unattended — each item through `kickoff --base <parent branch>`. A failed item stops its descendants only. Never merges. |
@@ -28,7 +29,7 @@ read what a counterparty changed in a contract.
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 | [`zoom-out`](./skills/zoom-out/SKILL.md) | Break mid-task tunnel vision: restate the goal from the original request, mark sunk work ignorable, measure the decision space, get a fresh-context second opinion (subagent that never sees the current approach), present 2–3 options-in-kind + a recommendation. Analysis only until the user picks. |
 
-`explain`, `brainstorm`, `kickoff`, `overnight`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `test-drive`, `brainstorm`, `kickoff`, `overnight`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -85,8 +86,8 @@ between the two copies — that's expected, not a bug.
 
 ## Skill profile
 
-The repo-agnostic skills (`deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`; `explain` to a
-lesser extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
+The repo-agnostic skills (`deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`, `test-drive`;
+`explain` to a lesser extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
 `AGENTS.md` / `package.json` scripts. For knobs that aren't derivable from docs, add a
 **`## Skill profile`** section to the consuming repo's root `CLAUDE.md`. Recognized knobs:
 
@@ -123,6 +124,11 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   <branch>` and `kickoff --base <branch>` override it, which is how a stacked PR targets
   its parent instead of the base branch.
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
+- **Throwaway instance** (`test-drive`) — the command that boots a disposable app + database,
+  where it records its base URL, and the credentials it guarantees. Open Mercato repos need no
+  entry: `yarn test:integration:ephemeral:start` → `.ai/qa/ephemeral-env.json` →
+  `admin@acme.com` / `secret`. Say so explicitly if the only available environment is a
+  long-lived shared one — `test-drive` then asks before seeding anything into it.
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),
   and audience (e.g. non-technical business owner).
