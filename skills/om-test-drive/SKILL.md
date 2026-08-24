@@ -29,7 +29,7 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 - **Empty** — the current worktree, as it stands. Diff target is the branch against the repo's default branch.
 - **A PR number / URL** — `gh pr checkout <N>` first, and only into a clean tree. A dirty tree is a stop, not a stash: say what's uncommitted and let the user decide.
 - **`--fresh`** — never attach to an already-running instance; always build a new one.
-- **`--no-seed`** — skip Phase 5 and hand over against whatever data already exists.
+- **`--no-seed`** — don't create anything; drive what's already there. Read-only, **not** verification-free: you still have to find an existing record that exercises the change and name it in the click route. If no such record exists, say so plainly and hand over a route that ends at an empty state — never an unqualified "go and look".
 
 ## Hard rules
 
@@ -46,7 +46,7 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 ### 1. Resolve the target
 
 - **PR argument** → verify the tree is clean, then `gh pr checkout <N> --repo <owner/name>`. Pass `--repo` explicitly: a checkout with several remotes (a fork alongside its upstream) usually has no default repo set, and bare `gh pr checkout` just errors out. Take the change surface from `gh pr diff <N> --repo <owner/name>` — scope that call too, or an unqualified number can resolve a PR in the *other* repo of a fork/upstream pair.
-- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`). **Fetch the base first.** A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong. **Include uncommitted work** (`git diff` and `git diff --staged` on top of the branch range): the instance is built from the working tree, so anything staged or unstaged is running in the app you hand over, and a surface derived from committed history alone would omit exactly the code the user is about to click on.
+- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`). **Fetch the base first.** A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong. **Include everything the build will see** — the instance is compiled from the working tree, so the surface must cover `git diff`, `git diff --staged`, *and* untracked source (`git status --porcelain` rows starting `??`). Untracked files are the trap: a brand-new route or component is invisible to every `git diff` form, so the handover would claim the change has no such surface while that surface is live in the app. If untracked source is present, fold it in or stop and say why.
 
 State the target and the HEAD sha + subject in one line before doing anything expensive, so the user can stop you if you picked the wrong thing. You'll need that sha again in Phase 2 and in the handover.
 
@@ -61,14 +61,27 @@ State the target and the HEAD sha + subject in one line before doing anything ex
 
 **Warn about the cost before starting, not after.** A cold boot runs the full initialize + production build pipeline: several minutes and RAM-heavy. Tell the user what they're waiting for.
 
-**Bootstrap the tree before you run the ephemeral command.** It is not a from-zero installer — it assumes a repo that has already been installed and built once, and it runs `initialize` *before* its own codegen and build steps. On a freshly-installed tree, or after a checkout that changed the lockfile, it fails on missing artifacts with errors that name the symptom and not the cause. In the monorepo the required sequence is exactly what the root `build` script already encodes:
+**Bootstrap the tree before you run the ephemeral command.** It is not a from-zero installer — it assumes a repo that has already been installed and built once, and it runs `initialize` *before* its own codegen and build steps. On a freshly-installed tree, or after a checkout that changed the lockfile, it fails on missing artifacts with errors that name the symptom and not the cause.
 
-```bash
-yarn install          # after any checkout that touches yarn.lock
-yarn build:packages   # `yarn mercato` *is* packages/cli/dist/bin.js — it must exist to run at all
-yarn generate         # writes the generated entity registry
-yarn build:packages   # rebuild so the generated files land in dist/
-```
+**Which bootstrap depends on the layout, not on the script name.** Decide with `jq -e '.scripts["build:packages"]' package.json`:
+
+- **Monorepo** (`build:packages` at the root, `packages/cli` in-tree). `yarn mercato` *is* `packages/cli/dist/bin.js`, so the CLI that orchestrates the build must itself be built first — hence the doubled step, exactly as the root `build` script encodes it:
+
+  ```bash
+  yarn install          # after any checkout that touches yarn.lock
+  yarn build:packages   # bootstraps the CLI binary itself
+  yarn generate         # writes the generated entity registry
+  yarn build:packages   # rebuild so the generated files land in dist/
+  ```
+
+- **Standalone scaffold** (flat `create-mercato-app` layout, no `build:packages`, `mercato` resolved from `node_modules/.bin`). There is no chicken-and-egg — the CLI ships built as a dependency — so the sequence is just:
+
+  ```bash
+  yarn install
+  yarn generate         # `mercato generate`
+  ```
+
+  Running the monorepo's sequence here fails on a `build:packages` script that doesn't exist, which is why the layout check comes first.
 
 Map the error you get back to the rung you skipped:
 
@@ -84,16 +97,18 @@ Note the trap in the third: `initialize` applies every migration successfully an
 
 ```bash
 JWT_SECRET=$(openssl rand -hex 32) AUTH_SECRET=$(openssl rand -hex 32) \
-  yarn mercato test:ephemeral
+  <the boot command the ladder selected>
 ```
+
+Prefix whichever command the ladder actually chose — on a scaffold that's `yarn test:integration:ephemeral:start` or the `yarn --cwd apps/mercato exec …` form, not the monorepo's `yarn mercato`.
 
 Pass them in the environment; **do not edit the repo's `.env`** — it's the user's file and this skill is read-only on the tree (Hard rule 6). Treat any "exited before readiness" as this class of problem until `--verbose` proves otherwise: the app process failing *after* a clean build is a configuration refusal far more often than a code fault.
 
 **Resolve the boot command** — first hit wins, and the last rung is a real probe rather than an assumption:
 
-1. Root `package.json` has `test:integration:ephemeral:start` → `yarn test:integration:ephemeral:start`. This is the Open Mercato monorepo; the script wraps `mercato test:ephemeral`.
+1. Root `package.json` has `test:integration:ephemeral:start` → `yarn test:integration:ephemeral:start`. **Both** the monorepo and a current `create-mercato-app` scaffold define this, so the script's presence tells you nothing about which one you're in — see the layout check below before bootstrapping.
 2. `yarn mercato test:ephemeral` (equivalently `yarn mercato test ephemeral`).
-3. A `create-mercato-app` scaffold — no root ephemeral script, but `@open-mercato/cli` is installed under the app. Probe for the alias before using it: `yarn --cwd apps/mercato exec mercato --help`, then `yarn --cwd apps/mercato exec mercato test:ephemeral`.
+3. An older scaffold laid out under `apps/mercato` with no root script — probe first, then use it: `yarn --cwd apps/mercato exec mercato --help`, then `yarn --cwd apps/mercato exec mercato test:ephemeral`.
 4. The repo's own documented boot (`## Skill profile` → **Throwaway instance**, or `CLAUDE.md` / `AGENTS.md`). If that resolves to a **long-lived shared dev stack** rather than a disposable one, say so and drop to `--no-seed` for the rest of the run — do not ask for permission to write into it (Hard rule 3).
 
 Useful flags: `--verbose` (full bootstrap/build logs — worth a re-run once the tree is bootstrapped and a boot still fails silently), `--no-reuse-env` (always a brand-new instance on an isolated port), `--no-screenshots` (irrelevant here; this skill doesn't drive a browser).
@@ -129,15 +144,18 @@ Capture the token and fail loudly if it isn't there — a probe that prints the 
 TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
   -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+  | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).token || ""')
 [ -n "$TOKEN" ] || { echo "login failed"; exit 1; }
 ```
 
 Then **use the token** on a stable, always-present collection endpoint — *not* a route the change touches. Route discovery is Phase 4 and hasn't run yet, and a UI-only change may add no API route at all:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/<a known collection>"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/<a known collection>")
+case "$CODE" in 2*) ;; *) echo "authorization failed: $CODE"; exit 1;; esac
 ```
+
+Check the status, don't just print it: a 401 or 403 that scrolls past is how a run reaches the handover claiming login was proven when it wasn't.
 
 A login that mints a token while every subsequent call returns 401 is exactly what this catches, and it's a failure the user would otherwise hit on their first click. Re-check the *changed* surfaces once Phase 4 has identified them, and accept whatever success status each one actually returns — a create is a 201, a delete often a 204, and demanding 200 everywhere would fail a working drive.
 
@@ -194,6 +212,7 @@ The deliverable. Inline in your final message:
 
 ## Instance
 - URL: <baseUrl>/<app path> — port <n>, built from <sha> "<subject>"
+  <on a dirty tree: + uncommitted work — N modified, M untracked; HEAD alone does not identify what's running>
 - Login: <the credentials the booted profile guarantees; Open Mercato's ephemeral env pins admin@acme.com / secret>
   Verified: <method> <auth route> → <status>; <method> <checked route> → <status>
 - Stop it: <exact command>. <If this run booted the instance: destroys the container and everything
