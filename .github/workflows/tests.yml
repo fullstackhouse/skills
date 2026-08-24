@@ -1,0 +1,25 @@
+name: tests
+
+# Most skills are prose and untestable. `agent-docs` ships an executable audit
+# script, so it gets a real suite -- fixtures are generated into a temp dir, so
+# this needs nothing but python3.
+
+on:
+  pull_request:
+    paths:
+      - "skills/**/scripts/**"
+      - "skills/**/tests/**"
+      - ".github/workflows/tests.yml"
+  push:
+    branches: [main]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: agent-docs audit suite
+        run: python3 skills/agent-docs/tests/test_agent_docs_audit.py
