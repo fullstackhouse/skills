@@ -1,11 +1,11 @@
 ---
-name: test-drive
+name: om-test-drive
 description: Boot a change on a throwaway instance, prove login actually works, seed the data the change needs to be visible, then hand over a click-by-click route through it. Use when you want to see a change working before merging — "boot this PR so I can click through it", "set me up to review X by hand", "let me try this". Knows Open Mercato's ephemeral command; degrades to any repo's documented boot. Args: nothing (current worktree), or a PR number/URL to check out first.
 ---
 
-# test-drive
+# om-test-drive
 
-You are running the **test-drive** skill. Goal: put a running instance of the change in the user's hands, with working credentials, the data that makes the change visible, and a route through it — so they can form their own opinion by clicking, not by reading a diff.
+You are running the **om-test-drive** skill. Goal: put a running instance of the change in the user's hands, with working credentials, the data that makes the change visible, and a route through it — so they can form their own opinion by clicking, not by reading a diff.
 
 This is **not** `explain` (which translates a diff into a merge decision without running anything) and **not** an automated-QA skill (which drives a browser and posts pass/fail evidence to a pipeline). You do not drive the UI. You boot, you prove auth, you seed, you write the route — the human does the clicking.
 
