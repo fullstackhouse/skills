@@ -1,6 +1,6 @@
 name: tests
 
-# Most skills are prose and untestable. `agent-docs` ships an executable audit
+# Most skills are prose and untestable. `docs-audit` ships an executable audit
 # script, so it gets a real suite -- fixtures are generated into a temp dir, so
 # this needs nothing but python3.
 
@@ -21,5 +21,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: agent-docs audit suite
-        run: python3 skills/agent-docs/tests/test_agent_docs_audit.py
+      - name: docs-audit suite
+        run: python3 skills/docs-audit/tests/test_docs_audit.py

@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Audit a repository's agent instruction files (AGENTS.md / CLAUDE.md).
+"""Audit a repository against its own stated documentation contract.
+
+Four rule families, selectable with --only:
+
+  chain  agent instruction files (AGENTS.md / CLAUDE.md) and what agents load
+  specs  spec numbering, naming and template conformance
+  index  docs no other doc links to
+  links  relative links that do not resolve
+
+The conventions are DERIVED from the repo, never imposed: the majority
+filename pattern in its own spec directory, and the headings in its own
+template. There is no house style to enforce -- groomershop and covo number
+their specs, open-mercato dates them, and a checker that hardcodes either is
+wrong half the time.
+
+The agent-doc half:
 
 Coding agents concatenate agent docs from the repository root down to the
 directory they are working in. Codex stops once the COMBINED size reaches
@@ -11,7 +26,7 @@ This script measures those chains, reports per-section sizes so an oversized
 file can be triaged, and enforces limits in CI.
 
 Usage:
-  agent_docs_audit.py [--root DIR] [--json] [--check]
+  docs_audit.py [--root DIR] [--json] [--check] [--only FAMILIES]
                       [--baseline PATH] [--update-baseline]
                       [--budget-bytes N] [--root-max-lines N] [--reserve-bytes N]
 
@@ -25,6 +40,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 
 DOC_NAMES = ("AGENTS.md", "CLAUDE.md")
@@ -44,6 +60,21 @@ IMPORT_RE = re.compile(r"^@([^\s]+)\s*$", re.MULTILINE)
 # A stub below this size that imports a sibling doc is an alias for it, not a
 # second source of truth.
 STUB_MAX_BYTES = 512
+
+FAMILIES = ("chain", "specs", "index", "links")
+
+# `SPEC-041a` is a deliberate follow-up to `SPEC-041`, not a collision with it.
+# covo uses this; a checker that strips the suffix reports 2 false positives out
+# of 10, which is how a convention checker loses the room.
+SPEC_NUMBERED_RE = re.compile(r"^SPEC-(\d+)([a-z]*)-(\d{4}-\d{2}-\d{2})-(.+)\.md$")
+SPEC_NUMBERED_UNDATED_RE = re.compile(r"^SPEC-(\d+)([a-z]*)-(.+)\.md$")
+SPEC_DATED_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.+)\.md$")
+SPEC_CONVENTIONS = ("numbered-dated", "numbered", "dated")
+
+# Files that live in a spec directory without being specs.
+SPEC_DIR_EXEMPT = {"README.md", "AGENTS.md", "CLAUDE.md", "LICENSE.md", "index.md"}
+
+MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
 DEFAULT_BUDGET_BYTES = 32768   # Codex project_doc_max_bytes
 DEFAULT_ROOT_MAX_LINES = 230   # om-create-agents-md: "Root MUST stay under 230 lines"
@@ -178,10 +209,236 @@ def ancestors(reldir: str) -> list[str]:
     return [""] + [os.sep.join(parts[: i + 1]) for i in range(len(parts))]
 
 
+
+# ------------------------------------------------------- markdown collection
+
+def tracked_files(root: str) -> set:
+    """Repo files git knows about, or None when this is not a git checkout."""
+    try:
+        proc = subprocess.run(["git", "-C", root, "ls-files"],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return {line for line in proc.stdout.splitlines() if line}
+
+
+def all_markdown(root: str, tracked: set = None) -> list:
+    """Every repo-relative .md path, skipping vendored and untracked files."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for name in filenames:
+            if not name.endswith(".md"):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, name), root)
+            if tracked is not None and rel not in tracked:
+                continue
+            out.append(rel)
+    return sorted(out)
+
+
+def link_targets(root: str, relpath: str) -> list:
+    """Resolved repo-relative targets of a file's relative markdown links."""
+    try:
+        text = open(os.path.join(root, relpath), encoding="utf-8", errors="replace").read()
+    except OSError:
+        return []
+    base = os.path.dirname(relpath)
+    out = []
+    for raw in MD_LINK_RE.findall(text):
+        target = raw.split()[0].strip("<>")          # drop a ' "title"' suffix
+        if target.startswith(("http://", "https://", "mailto:", "#", "tel:", "data:")):
+            continue
+        # Placeholders in an illustrative snippet are not links to anywhere:
+        # `…/pull/N`, `<branch>`, `{{SLUG}}`. Checking them is pure noise.
+        if any(ch in target for ch in "…<>{}$*"):
+            continue
+        if target.startswith("~") or re.search(r"\.\w+:\d", target):
+            continue  # a home path, or a `file.ts:191` code reference
+        target = target.split("#")[0]
+        if not target:
+            continue
+        out.append((raw, os.path.normpath(os.path.join(base, target))))
+    return out
+
+
+# -------------------------------------------------------------- spec family
+
+def find_spec_dirs(root: str) -> list:
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        if os.path.basename(dirpath) == "specs":
+            found.append(os.path.relpath(dirpath, root))
+    return sorted(found)
+
+
+def classify_spec(name: str) -> str:
+    if SPEC_NUMBERED_RE.match(name):
+        return "numbered-dated"
+    if SPEC_NUMBERED_UNDATED_RE.match(name):
+        return "numbered"
+    if SPEC_DATED_RE.match(name):
+        return "dated"
+    return "other"
+
+
+def spec_number(name: str):
+    """The (number, suffix) key a collision is measured on, or None."""
+    m = SPEC_NUMBERED_RE.match(name) or SPEC_NUMBERED_UNDATED_RE.match(name)
+    return f"{m.group(1)}{m.group(2)}" if m else None
+
+
+def audit_specs(root: str, add) -> dict:
+    """Derive each spec dir's convention from its own contents, then check it."""
+    summary = []
+    for reldir in find_spec_dirs(root):
+        abs_dir = os.path.join(root, reldir)
+        names = sorted(
+            n for n in os.listdir(abs_dir)
+            if n.endswith(".md") and n not in SPEC_DIR_EXEMPT
+            and "template" not in n.lower()
+        )
+        if len(names) < 3:
+            continue  # too few to infer a convention from
+
+        kinds = {k: [] for k in SPEC_CONVENTIONS + ("other",)}
+        for n in names:
+            kinds[classify_spec(n)].append(n)
+        convention = max(SPEC_CONVENTIONS, key=lambda k: len(kinds[k]))
+
+        # Never assert a convention nothing follows -- that is how a checker
+        # reports "73 specs, numbered convention (0 conforming)".
+        if not kinds[convention]:
+            add("SPEC_NO_CONVENTION", "warn",
+                f"{reldir}: {len(names)} specs match no recognised naming "
+                f"convention; skipping numbering and template checks here",
+                dir=reldir, count=len(names))
+            continue
+
+        deviations = [n for n in names if classify_spec(n) != convention]
+
+        summary.append({
+            "dir": reldir, "count": len(names), "convention": convention,
+            "conforming": len(kinds[convention]), "deviations": deviations,
+        })
+
+        # Deviations are reported, never corrected -- a repo is allowed to have
+        # exceptions, and only a human knows which ones are deliberate.
+        if deviations:
+            add("SPEC_NAMING_DEVIATION", "warn",
+                f"{reldir}: {len(deviations)} of {len(names)} files do not match this "
+                f"directory's own {convention} convention: {', '.join(deviations[:4])}"
+                + (" …" if len(deviations) > 4 else ""),
+                dir=reldir, deviations=deviations)
+
+        if convention.startswith("numbered"):
+            buckets = {}
+            for n in kinds[convention]:
+                buckets.setdefault(spec_number(n), []).append(n)
+            for key, group in sorted(buckets.items()):
+                if len(group) > 1:
+                    add("SPEC_NUMBER_COLLISION", "error",
+                        f"{reldir}: SPEC-{key} used by {len(group)} specs — "
+                        f"{', '.join(group)}",
+                        dir=reldir, number=key, files=group)
+
+        # Template conformance, only when the directory ships a template.
+        template = next((n for n in os.listdir(abs_dir)
+                         if n.endswith(".md") and "template" in n.lower()), None)
+        if template:
+            tmpl_text = open(os.path.join(abs_dir, template),
+                             encoding="utf-8", errors="replace").read()
+            required = [sec["heading"] for sec in split_sections(tmpl_text)
+                        if sec["level"] == 2]
+            have_by_file = {}
+            for n in names:
+                text = open(os.path.join(abs_dir, n),
+                            encoding="utf-8", errors="replace").read()
+                have_by_file[n] = {sec["heading"].lower()
+                                   for sec in split_sections(text)}
+
+            # Only enforce sections most specs actually carry. A template
+            # section nobody uses is a dead template, not 29 broken specs --
+            # that distinction is the difference between a checker people act
+            # on and one they mute.
+            adopted = [r for r in required
+                       if sum(1 for h in have_by_file.values() if r.lower() in h)
+                       >= 0.7 * len(names)]
+
+            gaps = {}
+            for n in names:
+                missing = [r for r in adopted if r.lower() not in have_by_file[n]]
+                if missing:
+                    gaps[n] = missing
+            if gaps:
+                worst = sorted(gaps.items(), key=lambda kv: -len(kv[1]))[:3]
+                detail = "; ".join(f"{n} ({', '.join(m)})" for n, m in worst)
+                add("SPEC_TEMPLATE_GAP", "warn",
+                    f"{reldir}: {len(gaps)} of {len(names)} specs omit a section "
+                    f"most of their siblings carry — worst: {detail}"
+                    + (" …" if len(gaps) > 3 else ""),
+                    dir=reldir, count=len(gaps), gaps=gaps)
+    return {"spec_dirs": summary}
+
+
+# ------------------------------------------------------- index + link family
+
+def audit_links(root: str, docs: list, add) -> None:
+    for relpath in docs:
+        for raw, target in link_targets(root, relpath):
+            if not os.path.exists(os.path.join(root, target)):
+                add("DEAD_LINK", "error",
+                    f"{relpath} links to {raw}, which does not exist",
+                    path=relpath, target=raw)
+
+
+def audit_index(root: str, docs: list, add, tracked: set = None) -> None:
+    """Docs nothing points at. A doc no path reaches is a doc nobody reads."""
+    linked = set()
+    for relpath in docs:
+        for _, target in link_targets(root, relpath):
+            linked.add(target)
+
+    # Mentions outside markdown count too: `.ai/trackers/notion.md` is selected
+    # by name from a JSON config, and is referenced, not orphaned.
+    mentioned = ""
+    if tracked:
+        for rel in tracked:
+            if rel.endswith((".json", ".yml", ".yaml", ".toml", ".ts", ".js", ".mjs", ".sh")):
+                try:
+                    with open(os.path.join(root, rel), encoding="utf-8",
+                              errors="replace") as fh:
+                        mentioned += fh.read()
+                except OSError:
+                    continue
+
+    for relpath in docs:
+        name = os.path.basename(relpath)
+        # Entry points are reached by convention, not by link; agent docs are
+        # loaded by the harness; root-level files are the front door.
+        if name in ("README.md", "AGENTS.md", "CLAUDE.md") or os.sep not in relpath:
+            continue
+        if "docs" not in relpath.split(os.sep)[:-1]:
+            continue
+        if "archive" in relpath.lower() or "template" in name.lower():
+            continue
+        if relpath in linked or relpath in mentioned:
+            continue
+        if os.path.basename(relpath) in mentioned:
+            continue
+        if True:
+            add("DOC_ORPHANED", "warn",
+                f"{relpath} is not linked from any other document",
+                path=relpath)
+
+
 # ------------------------------------------------------------------ auditing
 
 def audit(root: str, budget: int, root_max_lines: int, reserve: int,
-          baseline: dict | None) -> dict:
+          baseline: dict | None, only: tuple = FAMILIES) -> dict:
     dirs = discover(root)
     resolved = {d: resolve_dir(root, d) for d in dirs}
 
@@ -208,6 +465,24 @@ def audit(root: str, budget: int, root_max_lines: int, reserve: int,
 
     def add(code, severity, message, **extra):
         findings.append({"code": code, "severity": severity, "message": message, **extra})
+
+    extras: dict = {}
+    if "specs" in only or "index" in only or "links" in only:
+        tracked = tracked_files(root)
+        docs = all_markdown(root, tracked)
+        if "links" in only:
+            audit_links(root, docs, add)
+        if "index" in only:
+            audit_index(root, docs, add, tracked)
+        if "specs" in only:
+            extras.update(audit_specs(root, add))
+
+    if "chain" not in only:
+        return {
+            "root": os.path.abspath(root), "families": list(only),
+            "findings": findings, "ok": not any(f["severity"] == "error" for f in findings),
+            **extras,
+        }
 
     if root_lines > root_max_lines:
         add("ROOT_OVER_LINES", "error",
@@ -287,7 +562,9 @@ def audit(root: str, budget: int, root_max_lines: int, reserve: int,
         "chains": chains,
         "files": biggest,
         "findings": findings,
+        "families": list(only),
         "ok": not any(f["severity"] == "error" for f in findings),
+        **extras,
     }
 
 
@@ -295,6 +572,22 @@ def audit(root: str, budget: int, root_max_lines: int, reserve: int,
 
 def human(report: dict) -> str:
     out: list[str] = []
+    for spec in report.get("spec_dirs", []):
+        out.append(f"{spec['dir']}: {spec['count']} specs, {spec['convention']} "
+                   f"convention ({spec['conforming']} conforming)")
+    if report.get("spec_dirs"):
+        out.append("")
+
+    if "doc_count" not in report:
+        if not report["findings"]:
+            out.append("No findings.")
+        else:
+            for sev in ("error", "warn"):
+                for f in report["findings"]:
+                    if f["severity"] == sev:
+                        out.append(f"{sev.upper():>5}  {f['code']}: {f['message']}")
+        return "\n".join(out)
+
     n, total = report["doc_count"], report["total_bytes"]
     out.append(f"{n} agent doc(s), {total:,} B total, budget {report['budget_bytes']:,} B/chain")
     out.append("")
@@ -334,6 +627,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--budget-bytes", type=int, default=DEFAULT_BUDGET_BYTES)
     ap.add_argument("--root-max-lines", type=int, default=DEFAULT_ROOT_MAX_LINES)
     ap.add_argument("--reserve-bytes", type=int, default=DEFAULT_RESERVE_BYTES)
+    ap.add_argument("--only", default=",".join(FAMILIES),
+                    help=f"comma-separated rule families: {', '.join(FAMILIES)}")
     args = ap.parse_args(argv)
 
     if not os.path.isdir(args.root):
@@ -345,12 +640,22 @@ def main(argv: list[str]) -> int:
         with open(args.baseline) as fh:
             baseline = json.load(fh)
 
+    only = tuple(f.strip() for f in args.only.split(",") if f.strip())
+    unknown = [f for f in only if f not in FAMILIES]
+    if unknown:
+        print(f"unknown family: {', '.join(unknown)} "
+              f"(known: {', '.join(FAMILIES)})", file=sys.stderr)
+        return 2
+
     report = audit(args.root, args.budget_bytes, args.root_max_lines,
-                   args.reserve_bytes, baseline)
+                   args.reserve_bytes, baseline, only)
 
     if args.update_baseline:
         if not args.baseline:
             print("--update-baseline requires --baseline PATH", file=sys.stderr)
+            return 2
+        if "chain" not in only:
+            print("--update-baseline requires the 'chain' family", file=sys.stderr)
             return 2
         payload = {
             "budget_bytes": report["budget_bytes"],

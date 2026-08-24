@@ -1,18 +1,30 @@
 ---
-name: agent-docs
-description: Audit and repair a repository's agent instruction files (AGENTS.md / CLAUDE.md) — measure what every session actually loads, check each rule is still true, and re-shape what has grown into an unreadable manual. Use when an agent doc has grown long or stale, before adding a rule to one that is already big, when agents in a large repo seem to miss instructions that are written down, or on "clean up our CLAUDE.md", "our agent docs are a mess", "is any of this still accurate?". Read-only until each change is approved.
+name: docs-audit
+description: Audit a repository against its own stated documentation contract — agent instruction files (AGENTS.md / CLAUDE.md) and what every session actually loads, spec numbering and template conformance, docs nothing links to, and links that no longer resolve — then repair what it finds. Use when an agent doc has grown long or stale, before adding a rule to one that is already big, when agents in a large repo seem to miss instructions that are written down, when specs or docs have drifted from the convention the repo describes, or on "clean up our CLAUDE.md", "our docs are a mess", "is any of this still accurate?". Read-only until each change is approved.
 ---
 
-# agent-docs
+# docs-audit
 
-You are running the **agent-docs** skill. The premise: agent instruction files
+You are running the **docs-audit** skill. The premise: agent instruction files
 only ever grow. Every incident, review nit and correction adds a section, and
 nothing ever removes one — measured across six FSH repos, roughly **2.5 KB per
 month, per repo, indefinitely**. Past a point the file stops being read
 carefully by anyone, human or agent, and some of it stops being true.
 
-Your job is to make the file smaller and truer without losing anything that
-earns its place. **Not** to delete rules you personally find verbose.
+The same rot shows up in the rest of the documentation: specs drift from the
+naming the repo describes, links rot, docs stop being reachable from anywhere.
+
+Your job is to hold the repo to the contract **it already wrote for itself**, and
+to make that contract readable again — not to impose a house style, and not to
+delete rules you personally find verbose.
+
+**The conventions are derived, never imposed.** There is no FSH house style to
+enforce: groomershop and covo number and date their specs, tournee numbers them
+without a date, open-mercato dates them without a number. Three conventions
+across four repos. The script infers each directory's convention from its own
+majority pattern and each spec template from the repo's own template file — so a
+"violation" always means *the repo disagrees with itself*, which is the only kind
+worth reporting.
 
 **Hard rule: propose, don't apply.** Every change is shown as a diff and applied
 only on approval. These files govern how every future session behaves; a rule
@@ -21,10 +33,12 @@ silently dropped is a behaviour silently changed.
 ## 1. Measure
 
 ```bash
-python3 skills/agent-docs/scripts/agent_docs_audit.py --root <repo>
+python3 skills/docs-audit/scripts/docs_audit.py --root <repo>
 ```
 
-Read the output before opening any file. It gives you:
+Four rule families run by default; narrow with `--only chain,specs,index,links`.
+
+**`chain`** — the agent instruction files, and what agents actually load:
 
 - **Chains** — root → working dir, the unit that actually matters. Agents
   concatenate agent docs from the repo root down to where they are working.
@@ -34,6 +48,20 @@ Read the output before opening any file. It gives you:
 - **Largest files, with their three biggest sections** — where the bytes are.
   Start there, not at the top of the file.
 - **Findings** — hard limits and structural problems.
+
+**`specs`** — per spec directory, the convention derived from its own contents,
+then: number collisions (`SPEC-041` used three times), files deviating from that
+convention, and sections the repo's own template mandates that most specs carry
+but some omit. Lettered variants (`SPEC-022a` following `SPEC-022`) are a
+deliberate FSH pattern and are **not** collisions.
+
+**`index`** — docs under a `docs/` path that nothing else in the repo points at,
+by link or by name. Untracked files are ignored: Conductor scratch is not part of
+the contract.
+
+**`links`** — relative links that do not resolve. Placeholders in illustrative
+snippets (`…/pull/N`, `<branch>`, `{{SLUG}}`) and `file.ts:191` code references
+are not links and are skipped.
 
 Budgets come from the consuming repo's `## Skill profile` if it sets them
 (`agentDocs: rootMaxLines / budgetBytes`); otherwise 230 lines and 32,768 bytes.
@@ -106,9 +134,13 @@ Prose limits do not hold. `om-create-agents-md` has said "root MUST stay under
 230 lines" for months, and both repos that ship it are over — one by 62%. Once a
 repo is inside its limits, offer to install the check:
 
-1. Copy `scripts/agent_docs_audit.py` into the repo (`scripts/`).
-2. Record a baseline: `--baseline scripts/agent-docs.baseline.json --update-baseline`.
-3. Add a CI step: `--check --baseline scripts/agent-docs.baseline.json`.
+1. Copy `scripts/docs_audit.py` into the repo (`scripts/`).
+2. Record a baseline: `--baseline scripts/docs-audit.baseline.json --update-baseline`.
+3. Add a CI step: `--check --baseline scripts/docs-audit.baseline.json`.
+
+Only error-severity findings fail `--check`: collisions, dead links and budget
+overruns are unambiguous, while naming deviations and orphans need a human to say
+whether they are deliberate.
 
 The baseline is a **ratchet, not a wall**: chains under budget grow freely;
 chains already over may only shrink. That freezes existing debt without blocking
@@ -126,7 +158,10 @@ Offer it. Don't install it unasked.
    is what stops the next session from "fixing" it back.
 5. **Git holds the history.** Never keep a struck-through passage, a "this used
    to say…" note, or a correction addressed to the document.
-6. **Report what you skipped**, so the filter stays reviewable.
-7. **Client repos:** these files name internal systems, staff and infrastructure.
+6. **Never rename a spec to resolve a collision without asking.** The number is
+   cited from tickets, PRs and other specs; renaming breaks those references, and
+   which of the two should move is a judgment only the author has.
+7. **Report what you skipped**, so the filter stays reviewable.
+8. **Client repos:** these files name internal systems, staff and infrastructure.
    Quote them into the local edit and your message to the user — never into a
    commit message, PR body, or anything that leaves the machine.

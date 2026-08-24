@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""End-to-end tests for agent_docs_audit.py.
+"""End-to-end tests for docs_audit.py.
 
 Fixtures are built in a temp dir rather than committed, so the repo carries no
 20 KB filler files and each test states the shape it needs in one place.
 
-Run: python3 skills/agent-docs/tests/test_agent_docs_audit.py
+Run: python3 skills/docs-audit/tests/test_docs_audit.py
 """
 
 import json
@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPT = os.path.join(HERE, "..", "scripts", "agent_docs_audit.py")
+SCRIPT = os.path.join(HERE, "..", "scripts", "docs_audit.py")
 
 failures: list[str] = []
 passes = 0
@@ -209,6 +209,171 @@ def test_empty_repo_does_not_crash():
     report, code = run(root, "--check")
     check("empty: no docs", report["doc_count"] == 0)
     check("empty: exit 0", code == 0, f"exit {code}")
+    shutil.rmtree(root)
+
+
+# ------------------------------------------------------- specs / index / links
+
+def spec(name: str, sections=("TLDR", "Problem Statement", "Changelog")) -> str:
+    return f"# {name}\n\n" + "".join(f"## {h}\n\ntext\n\n" for h in sections)
+
+
+def test_spec_number_collision_is_an_error():
+    files = {f"docs/specs/SPEC-00{i}-2026-01-0{i}-thing-{i}.md": spec(f"s{i}")
+             for i in (1, 2, 3)}
+    files["docs/specs/SPEC-003-2026-02-09-other.md"] = spec("dupe")
+    root = build(files)
+    report, code = run(root, "--only", "specs", "--check")
+    hits = [f for f in report["findings"] if f["code"] == "SPEC_NUMBER_COLLISION"]
+    check("spec collision: flagged", len(hits) == 1, str(codes(report)))
+    check("spec collision: exit 1", code == 1, f"exit {code}")
+    shutil.rmtree(root)
+
+
+def test_lettered_variant_is_not_a_collision():
+    """covo's SPEC-022a is a deliberate follow-up to SPEC-022, not a clash.
+
+    A checker that strips the suffix reports 2 false positives out of 10 there,
+    which is how a convention checker gets muted instead of acted on.
+    """
+    files = {f"docs/specs/SPEC-00{i}-2026-01-0{i}-thing-{i}.md": spec(f"s{i}")
+             for i in (1, 2, 3)}
+    files["docs/specs/SPEC-002a-2026-01-09-follow-up.md"] = spec("variant")
+    root = build(files)
+    report, _ = run(root, "--only", "specs")
+    check("lettered variant: not a collision",
+          "SPEC_NUMBER_COLLISION" not in codes(report), str(codes(report)))
+    shutil.rmtree(root)
+
+
+def test_undated_numbered_convention_is_recognised():
+    """tournee numbers specs without a date -- a third convention."""
+    files = {f"docs/specs/SPEC-00{i}-thing-{i}.md": spec(f"s{i}") for i in (1, 2, 3)}
+    files["docs/specs/SPEC-003-other-thing.md"] = spec("dupe")
+    root = build(files)
+    report, _ = run(root, "--only", "specs")
+    conv = report["spec_dirs"][0]
+    check("undated: convention derived", conv["convention"] == "numbered",
+          conv["convention"])
+    check("undated: all conforming", conv["conforming"] == 4, str(conv))
+    check("undated: collision found", "SPEC_NUMBER_COLLISION" in codes(report))
+    shutil.rmtree(root)
+
+
+def test_dated_convention_has_no_numbering_check():
+    """open-mercato dates specs; there is no number to collide."""
+    files = {f"docs/specs/2026-01-0{i}-thing-{i}.md": spec(f"s{i}") for i in (1, 2, 3)}
+    root = build(files)
+    report, _ = run(root, "--only", "specs")
+    check("dated: convention derived",
+          report["spec_dirs"][0]["convention"] == "dated",
+          report["spec_dirs"][0]["convention"])
+    check("dated: no collision check", "SPEC_NUMBER_COLLISION" not in codes(report))
+    shutil.rmtree(root)
+
+
+def test_unrecognised_naming_asserts_no_convention():
+    """Never report 'numbered convention (0 conforming)'."""
+    files = {f"docs/specs/whatever-{i}.md": spec(f"s{i}") for i in (1, 2, 3)}
+    root = build(files)
+    report, _ = run(root, "--only", "specs")
+    check("no convention: flagged", "SPEC_NO_CONVENTION" in codes(report),
+          str(codes(report)))
+    check("no convention: nothing asserted", not report.get("spec_dirs"),
+          str(report.get("spec_dirs")))
+    shutil.rmtree(root)
+
+
+def test_template_gaps_aggregate_to_one_finding():
+    files = {f"docs/specs/SPEC-00{i}-2026-01-0{i}-t{i}.md": spec(f"s{i}")
+             for i in (1, 2, 3, 4)}
+    files["docs/specs/SPEC-005-2026-01-05-t5.md"] = spec("s5", ("TLDR",))
+    files["docs/specs/SPEC-000-template.md"] = spec("tmpl")
+    root = build(files)
+    report, _ = run(root, "--only", "specs")
+    hits = [f for f in report["findings"] if f["code"] == "SPEC_TEMPLATE_GAP"]
+    check("template: one aggregated finding", len(hits) == 1, str(hits))
+    check("template: names the outlier", hits and hits[0]["count"] == 1, str(hits))
+    shutil.rmtree(root)
+
+
+def test_unadopted_template_section_is_not_enforced():
+    """A section nobody uses is a dead template, not N broken specs."""
+    files = {f"docs/specs/SPEC-00{i}-2026-01-0{i}-t{i}.md": spec(f"s{i}", ("TLDR",))
+             for i in (1, 2, 3, 4)}
+    files["docs/specs/SPEC-000-template.md"] = spec("tmpl", ("TLDR", "Nobody Uses This"))
+    root = build(files)
+    report, _ = run(root, "--only", "specs")
+    check("template: unadopted section ignored",
+          "SPEC_TEMPLATE_GAP" not in codes(report), str(codes(report)))
+    shutil.rmtree(root)
+
+
+def test_dead_relative_link_is_an_error():
+    root = build({"docs/a.md": "# A\n\nSee [B](./b.md).\n",
+                  "README.md": "# R\n\n[A](docs/a.md)\n"})
+    report, code = run(root, "--only", "links", "--check")
+    check("dead link: flagged", "DEAD_LINK" in codes(report))
+    check("dead link: exit 1", code == 1, f"exit {code}")
+    shutil.rmtree(root)
+
+
+def test_placeholders_and_code_refs_are_not_links():
+    root = build({"docs/a.md": (
+        "# A\n\n[View](…/pull/N) [Br](<branch>/x.md) [T]({{SLUG}}.md)\n"
+        "[Code](src/lib/x.ts:191) [Home](~/Downloads/f.docx)\n"
+        "[Web](https://example.com/x.md) [Anchor](#section)\n")})
+    report, _ = run(root, "--only", "links")
+    check("placeholders: no dead links", "DEAD_LINK" not in codes(report),
+          str([f["message"] for f in report["findings"]]))
+    shutil.rmtree(root)
+
+
+def test_orphaned_doc_is_warned_only_under_docs():
+    root = build({
+        "README.md": "# R\n\n[A](docs/a.md)\n",
+        "docs/a.md": "# A\n\ntext\n",
+        "docs/lonely.md": "# Lonely\n\ntext\n",
+        "tasks/scratch.md": "# Scratch\n\ntext\n",
+    })
+    report, code = run(root, "--only", "index", "--check")
+    orphans = [f["path"] for f in report["findings"] if f["code"] == "DOC_ORPHANED"]
+    check("orphan: docs/ file flagged", orphans == ["docs/lonely.md"], str(orphans))
+    check("orphan: warn only", code == 0, f"exit {code}")
+    shutil.rmtree(root)
+
+
+def test_only_filters_families():
+    root = build({"CLAUDE.md": "# Root\n" + "\nfiller\n" * 300,
+                  "docs/a.md": "# A\n\n[gone](./nope.md)\n"})
+    report, _ = run(root, "--only", "chain")
+    check("--only chain: no link findings", "DEAD_LINK" not in codes(report))
+    check("--only chain: chain findings kept", "ROOT_OVER_LINES" in codes(report),
+          str(codes(report)))
+    report, _ = run(root, "--only", "links")
+    check("--only links: no chain findings", "ROOT_OVER_LINES" not in codes(report))
+    shutil.rmtree(root)
+
+
+def test_unknown_family_is_a_usage_error():
+    root = build({"README.md": "# R\n"})
+    proc = subprocess.run([sys.executable, SCRIPT, "--root", root, "--only", "bogus"],
+                          capture_output=True, text=True)
+    check("unknown family: exit 2", proc.returncode == 2, f"exit {proc.returncode}")
+    shutil.rmtree(root)
+
+
+def test_untracked_files_are_ignored_in_a_git_repo():
+    """Conductor's .context/ scratch is not part of the repo's contract."""
+    root = build({"README.md": "# R\n\n[A](docs/a.md)\n", "docs/a.md": "# A\n"})
+    for cmd in (["init", "-q"], ["add", "."], ["-c", "user.email=t@t", "-c",
+                "user.name=t", "commit", "-qm", "x"]):
+        subprocess.run(["git", "-C", root] + cmd, capture_output=True)
+    with open(os.path.join(root, "docs", "untracked.md"), "w") as fh:
+        fh.write("# Untracked\n")
+    report, _ = run(root, "--only", "index")
+    orphans = [f["path"] for f in report["findings"] if f["code"] == "DOC_ORPHANED"]
+    check("untracked: ignored", orphans == [], str(orphans))
     shutil.rmtree(root)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "fsh",
-  "description": "Full Stack House Claude Code skills (idea brainstorming & kickoff, delivery workflow, bug/flake hunting, change explanation, spec/ticket/PR polishing, status reporting, design, document redlines, agent-doc maintenance)",
+  "description": "Full Stack House Claude Code skills (idea brainstorming & kickoff, delivery workflow, bug/flake hunting, change explanation, spec/ticket/PR polishing, status reporting, design, document redlines, documentation auditing)",
   "version": "1.1.0",
   "author": {
     "name": "Full Stack House",
