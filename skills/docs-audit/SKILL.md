@@ -19,7 +19,7 @@ The rubric is [`references/conventions.md`](./references/conventions.md). **Read
 - **Mode** — write by default: mechanical fixes applied (Phase 4), judgment calls proposed (Phase 5). `--audit-only` writes nothing at all.
 - **Ownership decides how far you go.** `git remote -v` plus the repo's own docs:
   - **Ours** — audit and fix.
-  - **A client's, that we work in** — audit and fix, but their stated conventions win over this rubric (see Hard rule 5).
+  - **A client's, that we work in** — audit and fix, but their stated conventions win over this rubric (see Hard rule 4).
   - **Upstream we don't own** — **propose only**, however wrong it looks. Reformatting a maintainer's `AGENTS.md` in a drive-by PR is how a contribution gets closed unread. Report, and offer to open one narrow PR for the single highest-value fix.
 - **Read the repo's own rules first.** A root `AGENTS.md`/`CLAUDE.md`, a `docs/README.md`, a spec-directory `README.md`, `CONTRIBUTING.md`. A repo that has *deliberately* chosen differently is not in violation.
 

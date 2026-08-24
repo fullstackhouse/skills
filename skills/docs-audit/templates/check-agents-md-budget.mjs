@@ -29,7 +29,12 @@ import { dirname, join, resolve } from 'node:path'
 const DEFAULTS = { rootMaxBytes: 31232, chainBudgetBytes: 32768 }
 const UPDATE = process.argv.includes('--update-baseline')
 
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+// execFileSync's default maxBuffer is 1 MB, and `git ls-files` blows past it on a large
+// repo — 40k tracked files is ~2 MB of paths, and the gate dies with ENOBUFS for a reason
+// that has nothing to do with the budget it is meant to check.
+const EXEC = { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+
+const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], EXEC).trim()
 process.chdir(repoRoot)
 const BASELINE_PATH = resolve(repoRoot, 'scripts/agents-md-budget.baseline.json')
 
@@ -37,7 +42,7 @@ const baseline = existsSync(BASELINE_PATH)
   ? { ...DEFAULTS, chains: {}, ...JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) }
   : { ...DEFAULTS, chains: {} }
 
-const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
+const tracked = execFileSync('git', ['ls-files'], EXEC)
   .split('\n')
   .filter((f) => /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f))
 
