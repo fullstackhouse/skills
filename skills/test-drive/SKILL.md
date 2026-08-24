@@ -42,8 +42,8 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 ### 1. Resolve the target
 
-- **PR argument** → verify the tree is clean, `gh pr checkout <N>`, then `gh pr diff <N>` for the change surface.
-- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`).
+- **PR argument** → verify the tree is clean, then `gh pr checkout <N> --repo <owner/name>`. Pass `--repo` explicitly: a checkout with several remotes (a fork alongside its upstream) usually has no default repo set, and bare `gh pr checkout` just errors out. Take the change surface from `gh pr diff <N>`.
+- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`). **Fetch the base first.** A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong.
 
 State the target and the HEAD sha + subject in one line before doing anything expensive, so the user can stop you if you picked the wrong thing. You'll need that sha again in Phase 2 and in the handover.
 
@@ -56,6 +56,25 @@ State the target and the HEAD sha + subject in one line before doing anything ex
 
 **Warn about the cost before starting, not after.** A cold boot runs the full initialize + production build pipeline: several minutes and RAM-heavy. Tell the user what they're waiting for.
 
+**Bootstrap the tree before you run the ephemeral command.** It is not a from-zero installer — it assumes a repo that has already been installed and built once, and it runs `initialize` *before* its own codegen and build steps. On a freshly-installed tree, or after a checkout that changed the lockfile, it fails on missing artifacts with errors that name the symptom and not the cause. In the monorepo the required sequence is exactly what the root `build` script already encodes:
+
+```bash
+yarn install          # after any checkout that touches yarn.lock
+yarn build:packages   # `yarn mercato` *is* packages/cli/dist/bin.js — it must exist to run at all
+yarn generate         # writes the generated entity registry
+yarn build:packages   # rebuild so the generated files land in dist/
+```
+
+Map the error you get back to the rung you skipped:
+
+| Error | Missing rung |
+|---|---|
+| `Couldn't find the node_modules state file` | `yarn install` |
+| `Cannot find module '.../packages/cli/dist/bin.js'` | `yarn build:packages` |
+| `Cannot find module '.../packages/core/dist/generated/entities.ids.generated.js'` while "Bootstrapping application" | `yarn generate`, then `yarn build:packages` again |
+
+Note the trap in the third: `initialize` applies every migration successfully and *then* dies, so a codegen problem presents as a database one. Don't reach for `--verbose` on any of these — it adds log volume, not the missing artifact.
+
 **Resolve the boot command** — first hit wins, and the last rung is a real probe rather than an assumption:
 
 1. Root `package.json` has `test:integration:ephemeral:start` → `yarn test:integration:ephemeral:start`. This is the Open Mercato monorepo; the script wraps `mercato test:ephemeral`.
@@ -63,7 +82,7 @@ State the target and the HEAD sha + subject in one line before doing anything ex
 3. A `create-mercato-app` scaffold — no root ephemeral script, but `@open-mercato/cli` is installed under the app. Probe for the alias before using it: `yarn --cwd apps/mercato exec mercato --help`, then `yarn --cwd apps/mercato exec mercato test:ephemeral`.
 4. The repo's own documented boot (`## Skill profile` → **Throwaway instance**, or `CLAUDE.md` / `AGENTS.md`). If that resolves to a **long-lived shared dev stack** rather than a disposable one, say so explicitly and get consent before Phase 5 writes anything (Hard rule 3).
 
-Useful flags: `--verbose` (full bootstrap/build logs — reach for it the moment a boot fails silently), `--no-reuse-env` (always a brand-new instance on an isolated port), `--no-screenshots` (irrelevant here; this skill doesn't drive a browser).
+Useful flags: `--verbose` (full bootstrap/build logs — worth a re-run once the tree is bootstrapped and a boot still fails silently), `--no-reuse-env` (always a brand-new instance on an isolated port), `--no-screenshots` (irrelevant here; this skill doesn't drive a browser).
 
 **Run it backgrounded.** The command holds the terminal until `Ctrl+C` — that's by design, it's what keeps the instance alive for the user.
 
@@ -102,7 +121,8 @@ A login that mints a token while every subsequent call returns 401 is exactly wh
 
 Enough to say what it does in product terms — and, more importantly, to name **the user-visible surfaces it touches**. That list is what the click route is built from.
 
-- Derive routes from the changed files using the repo's route convention or generated manifest. Don't guess a URL; a 404 in the handover destroys the user's trust in the rest of it.
+- Take the changed-file list from `gh pr diff <N> --name-only` (or a freshly-fetched base), then map each file to a route with the repo's convention. In Open Mercato a module's `backend/<path>/page.tsx` is `/backend/<path>`, and detail pages re-export each other — `sales/orders/[id]` renders the `sales/documents/[id]` component, so one changed component surfaces under several routes.
+- Don't guess a URL; a 404 in the handover destroys the user's trust in everything else in it.
 - Pull the linked ticket if the branch or PR references one — it usually states the change in exactly the user terms you want.
 - If the change has **no UI surface** (a worker, a migration, an API-only change), say so plainly and route the drive through the API or CLI instead of inventing a screen.
 
@@ -113,10 +133,11 @@ For a full merge-decision writeup — scenarios, what's tested, residual risk �
 Skip if `--no-seed`.
 
 1. **Ask what state makes the change visible.** An order in a particular status, a product with a variant, a customer carrying the new field. The change is only demonstrable against data that exercises it.
-2. **Check what already exists first.** Open Mercato's initialize seeds a tenant plus demo customers, catalog, sales, and todos. An existing record that fits beats a new one, and it keeps the click route shorter. (Outside an ephemeral instance, never *assume* demo data is present — verify.)
-3. **Create through the real API.** Discover the route from the changed module's own `api/` directory rather than guessing it, then `POST` with the bearer token and `Content-Type: application/json`.
-4. **Read every record back** with a separate `GET`. Trusting the create response is how you hand over a record that isn't really there — or one the app can't find because an index never updated.
-5. **No API route for it?** Put the UI form into the click route as step 0, with the exact fields to fill. Do not fake it in the database (Hard rule 2).
+2. **If the change ships an integration or e2e spec, read it first.** It is the author's own recipe for the state the change needs — exact route, exact payload, exact read-back — and reusing it means your seed exercises the path they intended rather than one you invented.
+3. **Check what already exists first.** Open Mercato's initialize seeds a tenant plus demo customers, catalog, sales, and todos. An existing record that fits beats a new one, and it keeps the click route shorter. (Outside an ephemeral instance, never *assume* demo data is present — verify.)
+4. **Create through the real API.** Discover the route from the changed module's own `api/` directory rather than guessing it, then `POST` with the bearer token and `Content-Type: application/json`.
+5. **Read every record back** with a separate `GET`. Trusting the create response is how you hand over a record that isn't really there — or one the app can't find because an index never updated.
+6. **No API route for it?** Put the UI form into the click route as step 0, with the exact fields to fill. Do not fake it in the database (Hard rule 2).
 
 For each seeded record, note its **human-visible identifier** (name, number, title) and the **backend URL where the user will find it**. That pairing is what makes the handover clickable rather than a description.
 
