@@ -9,6 +9,8 @@ You are running the **om-test-drive** skill. Goal: put a running instance of the
 
 This is **not** `explain` (which translates a diff into a merge decision without running anything) and **not** an automated-QA skill (which drives a browser and posts pass/fail evidence to a pipeline). You do not drive the UI. You boot, you prove auth, you seed, you write the route — the human does the clicking.
 
+**Scope: Open Mercato first, and honestly so.** The boot step degrades to any repo that documents a disposable environment, but the auth and seeding phases are written around Open Mercato's routes. On another stack this skill boots and then needs its profile to supply the auth contract — without that, stop and say so rather than half-driving an app you can't log into.
+
 A URL handed over without a completed login round-trip and a named record to look at is a **failure of this skill**, not a success. "It's running on port 5001" is setup, not a test drive.
 
 ## Project specifics — read these first
@@ -16,6 +18,7 @@ A URL handed over without a completed login round-trip and a named record to loo
 This skill is repo-agnostic, with Open Mercato as its known case. Gather the concrete details from the repository you're running in:
 
 - **How to boot a throwaway instance** — the command that stands up a disposable app + database, where it records its base URL, and which credentials it guarantees. Open Mercato is resolved in Phase 2; for anything else, derive from the repo's `CLAUDE.md` / `AGENTS.md` / `package.json` scripts, or its **`## Skill profile`** section (the curated source) under the **Throwaway instance** knob.
+- **How to authenticate against it** — the login route, its method and payload shape, and whether it returns a bearer token or sets a session cookie. Phases 3 and 5 are written around Open Mercato's `POST /api/auth/login` → `{token}`; **a repo that authenticates differently will boot and then fail every later phase**, so if its profile doesn't document the auth contract, stop and ask rather than guessing at a login route.
 - **How a changed file maps to a URL** — the route directory convention or a generated route manifest. The click route is *derived* from the diff, so you need this before Phase 4.
 - **How records get created through the real path** — the API route convention per module, or the UI form that owns each entity. You need this before Phase 5.
 
@@ -30,26 +33,28 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 ## Hard rules
 
-1. **Hand over nothing you haven't verified, and don't overclaim what you did verify.** Every URL in the click route must have been fetched *authenticated* and resolved. Every seeded record must have been read back through the API. But know the ceiling of a no-browser drive: you have proven the route resolves and the data persisted — **not** that the UI renders it. Say which of the two you checked; never let a 200 stand in for "the change works".
+1. **Hand over nothing you haven't verified, and don't overclaim what you did verify.** Every URL in the click route must have been fetched *authenticated* and resolved. Every seeded record must have been read back through the app — the API when a route exists, and when it doesn't (the UI-form fallback in Phase 5) say plainly that the record is unverified and the user is confirming it themselves. But know the ceiling of a no-browser drive: you have proven the route resolves and the data persisted — **not** that the UI renders it. Say which of the two you checked; never let a 200 stand in for "the change works".
 2. **Never write to the database directly.** Seed through the real API or the real UI form. A row inserted behind the app skips validation, events, and index/search updates — the app then treats it differently from a real record, and the drive demonstrates something that can't happen in production.
-3. **Never seed against a database that isn't the throwaway one.** Before the first write, confirm the base URL is the instance this run booted (or one recorded in the ephemeral state file). If you can't confirm it, stop and ask. Seeding into someone's dev database is not recoverable by apologising.
-4. **Don't demo a build you can't attribute.** Prove the running instance was built from the commit under test, or restart it fresh. See the reuse trap in Phase 2 — it is the most likely way this skill lies to the user.
-5. **Say what the drive can't show.** A throwaway instance runs with outbound email, the scheduler, and enterprise modules disabled — though queue workers *do* run, so job-backed flows work. A click route that omits that invites the user to conclude a feature is broken when it's merely switched off.
-6. **Read-only on source.** Boot, seed, and write the handover — never edit files, commit, push, or merge. `gh pr checkout` with an explicit PR argument is the single exception.
+3. **Never seed against a database that isn't the throwaway one — and consent doesn't change that.** Before the first write, confirm the base URL is the instance this run booted (or one recorded in the ephemeral state file). If it's a long-lived or shared environment, do not offer to seed it "with permission": another developer's database is not disposable just because someone said yes. Drive it read-only with `--no-seed` and say what that costs, or stop. Seeding into someone's dev database is not recoverable by apologising.
+4. **Don't demo a build you can't attribute — and you usually can't.** The ephemeral state file records `startedAt`, a port and a database URL, but **no source SHA or build digest**, so a timestamp newer than your checkout is not evidence: a process can start after the checkout and still serve stale build output. Treat provenance as unprovable and force a fresh instance after any branch switch or PR checkout. See the reuse trap in Phase 2 — it is the most likely way this skill lies to the user.
+5. **Say what the drive can't show, from the environment you actually booted.** Open Mercato's ephemeral env disables outbound email, the scheduler and enterprise modules, while queue workers *do* run — so job-backed flows work and scheduled ones don't. Those specifics are Open Mercato's, not a property of throwaway instances in general: on any other profile, read the limitations off that environment rather than repeating this list. A click route that omits them invites the user to call a feature broken when it's merely switched off.
+6. **Read-only on source — not on build output.** Never edit source, commit, push, or merge. Bootstrapping deliberately writes build artifacts: `yarn install` rewrites `node_modules`, `yarn generate` writes the generated registry, `build:packages` fills `dist/`. That is expected and unavoidable — the instance is built from this tree — but it is a real mutation of the user's checkout, so **tell them in the handover what was installed, generated or rebuilt, and which branch the checkout is left on.** The two genuine exceptions to read-only are `gh pr checkout` with an explicit PR argument, and that bootstrap. Never edit tracked configuration to make a boot work: an `.env` that blocks startup is fixed with environment overrides for the run, not by rewriting the user's file.
 7. **The handover goes to the user.** This skill posts nothing to GitHub, Slack, or a tracker.
 
 ## Phases
 
 ### 1. Resolve the target
 
-- **PR argument** → verify the tree is clean, then `gh pr checkout <N> --repo <owner/name>`. Pass `--repo` explicitly: a checkout with several remotes (a fork alongside its upstream) usually has no default repo set, and bare `gh pr checkout` just errors out. Take the change surface from `gh pr diff <N>`.
-- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`). **Fetch the base first.** A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong.
+- **PR argument** → verify the tree is clean, then `gh pr checkout <N> --repo <owner/name>`. Pass `--repo` explicitly: a checkout with several remotes (a fork alongside its upstream) usually has no default repo set, and bare `gh pr checkout` just errors out. Take the change surface from `gh pr diff <N> --repo <owner/name>` — scope that call too, or an unqualified number can resolve a PR in the *other* repo of a fork/upstream pair.
+- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`). **Fetch the base first.** A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong. **Include uncommitted work** (`git diff` and `git diff --staged` on top of the branch range): the instance is built from the working tree, so anything staged or unstaged is running in the app you hand over, and a surface derived from committed history alone would omit exactly the code the user is about to click on.
 
 State the target and the HEAD sha + subject in one line before doing anything expensive, so the user can stop you if you picked the wrong thing. You'll need that sha again in Phase 2 and in the handover.
 
 ### 2. Boot a throwaway instance
 
-**Check preconditions first**, and report a failure with its fix rather than a stack trace:
+**Resolve the boot command before checking anything.** The preconditions and the bootstrap below are Open Mercato's, and applying them to a repo that boots some other way would reject a perfectly good environment for lacking Node or Docker. Run the discovery ladder first; only if it lands on the Mercato rungs do the rest of this phase's specifics apply.
+
+**Then check the preconditions**, reporting each failure with its fix rather than a stack trace:
 
 - `node -v` → Open Mercato's ephemeral runner requires Node 24 or newer, and says so with a fix; check it yourself so the user hears it before the build starts, not after.
 - `docker info` → must succeed. A non-standard runtime (Colima and friends) is auto-detected from the active Docker context; a dead daemon is not.
@@ -89,13 +94,17 @@ Pass them in the environment; **do not edit the repo's `.env`** — it's the use
 1. Root `package.json` has `test:integration:ephemeral:start` → `yarn test:integration:ephemeral:start`. This is the Open Mercato monorepo; the script wraps `mercato test:ephemeral`.
 2. `yarn mercato test:ephemeral` (equivalently `yarn mercato test ephemeral`).
 3. A `create-mercato-app` scaffold — no root ephemeral script, but `@open-mercato/cli` is installed under the app. Probe for the alias before using it: `yarn --cwd apps/mercato exec mercato --help`, then `yarn --cwd apps/mercato exec mercato test:ephemeral`.
-4. The repo's own documented boot (`## Skill profile` → **Throwaway instance**, or `CLAUDE.md` / `AGENTS.md`). If that resolves to a **long-lived shared dev stack** rather than a disposable one, say so explicitly and get consent before Phase 5 writes anything (Hard rule 3).
+4. The repo's own documented boot (`## Skill profile` → **Throwaway instance**, or `CLAUDE.md` / `AGENTS.md`). If that resolves to a **long-lived shared dev stack** rather than a disposable one, say so and drop to `--no-seed` for the rest of the run — do not ask for permission to write into it (Hard rule 3).
 
 Useful flags: `--verbose` (full bootstrap/build logs — worth a re-run once the tree is bootstrapped and a boot still fails silently), `--no-reuse-env` (always a brand-new instance on an isolated port), `--no-screenshots` (irrelevant here; this skill doesn't drive a browser).
 
 **Run it backgrounded.** The command holds the terminal until `Ctrl+C` — that's by design, it's what keeps the instance alive for the user.
 
-**The reuse trap.** The ephemeral command silently *attaches* to an already-running instance recorded in `.ai/qa/ephemeral-env.json` when source mtimes and a build-cache TTL say it's still valid. After a branch switch or a `gh pr checkout`, that can hand you a running build of **different code** while everything looks fine. Before trusting a reused instance, prove it was built from the commit under test — compare the state file's `startedAt` against the checkout and the working tree. If you can't prove it, pass `--no-reuse-env`. `--fresh` always passes it.
+**The reuse trap.** The ephemeral command silently *attaches* to an already-running instance recorded in `.ai/qa/ephemeral-env.json` when source mtimes and a build-cache TTL say it's still valid. After a branch switch or a `gh pr checkout`, that can hand you a running build of **different code** while everything looks fine.
+
+You cannot verify your way out of this: the state file carries `startedAt`, a port and a database URL, but **no source SHA or build digest**, and a process that started after your checkout may still be serving output built before it. So don't try to reason from the timestamp — **after any branch switch or PR checkout, always pass `--no-reuse-env`** (`--fresh` does it for you). Reuse is only safe when you booted the instance yourself, in this run, from this tree.
+
+One caveat on the escape hatch: `--no-reuse-env` takes the runner's setup lock and will not build a second instance while another ephemeral process holds it. If it blocks, report the lock owner and let the user stop it — don't promise a fresh instance you can't get.
 
 **Capture the base URL from the ready line**, which is authoritative:
 
@@ -114,22 +123,35 @@ curl -s -X POST "$BASE_URL/api/auth/login" \
   --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret'
 ```
 
-Expect 200 and a `token` in the body. Then **use the token** — one authenticated request against a route the change touches:
+Capture the token and fail loudly if it isn't there — a probe that prints the response and moves on can send `Bearer ` to the next call and still look like it passed:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/<route>"
+TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+[ -n "$TOKEN" ] || { echo "login failed"; exit 1; }
 ```
 
-A login that mints a token while every subsequent call returns 401 is exactly what this second request catches, and it's a failure the user would otherwise hit on their first click.
+Then **use the token** on a stable, always-present collection endpoint — *not* a route the change touches. Route discovery is Phase 4 and hasn't run yet, and a UI-only change may add no API route at all:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/<a known collection>"
+```
+
+A login that mints a token while every subsequent call returns 401 is exactly what this catches, and it's a failure the user would otherwise hit on their first click. Re-check the *changed* surfaces once Phase 4 has identified them, and accept whatever success status each one actually returns — a create is a 201, a delete often a 204, and demanding 200 everywhere would fail a working drive.
 
 **Fetching pages, not just the API.** An authenticated page needs the login *cookie*, not the bearer token — grab a jar on login and reuse it:
 
 ```bash
-curl -s -c jar.txt -X POST "$BASE_URL/api/auth/login" \
+JAR=$(mktemp); trap 'rm -f "$JAR"' EXIT      # a live session credential — never in the worktree
+curl -s -c "$JAR" -X POST "$BASE_URL/api/auth/login" \
   -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret' -o /dev/null
-curl -s -b jar.txt -o /dev/null -w '%{http_code}\n' "$BASE_URL/backend/<path>"
+curl -s -b "$JAR" -o /dev/null -w '%{http_code}\n' "$BASE_URL/backend/<path>"
 ```
+
+The jar holds a working session for the whole drive. Put it in `mktemp` and delete it on exit — written into the repo it is one `git add -A` away from being published. (The cookies come back flagged `Secure` even on `http://127.0.0.1`; curl sends them anyway because it treats loopback as a secure context, so no HTTPS workaround is needed. If a future curl tightens that, the symptom is a 307 with the jar — not a silent pass.)
 
 Read the status codes correctly, or you'll report working things as broken and broken things as fine:
 - **`307`/`302` on an anonymous `/backend` fetch is correct** — that's the login redirect, not a failure.
@@ -171,10 +193,13 @@ The deliverable. Inline in your final message:
 # Test drive: <change in one line>
 
 ## Instance
-- URL: <baseUrl>/backend — port <n>, built from <sha> "<subject>"
-- Login: admin@acme.com / secret
-  Verified: POST /api/auth/login → 200; GET <route> → 200
-- Stop it: <exact command> — this destroys the container and everything seeded below.
+- URL: <baseUrl>/<app path> — port <n>, built from <sha> "<subject>"
+- Login: <the credentials the booted profile guarantees; Open Mercato's ephemeral env pins admin@acme.com / secret>
+  Verified: <method> <auth route> → <status>; <method> <checked route> → <status>
+- Stop it: <exact command>. <If this run booted the instance: destroys the container and everything
+  seeded below. If it attached to one already running: Ctrl+C only detaches — the runtime and the
+  seeded data stay up for its owner.>
+- Left in your checkout: <branch now checked out; what bootstrap installed / generated / rebuilt>
 
 ## What the change does
 <2–4 sentences in product terms — the situation it addresses and what's different now>
@@ -192,9 +217,10 @@ The deliverable. Inline in your final message:
 ## What this drive can't show
 - Rendering is unverified — this drive proved the route resolves and the data persisted
   through the API, not that the component paints it. That's the first thing to check.
-- <no outbound email (delivery disabled); scheduled jobs won't fire (scheduler off, though
-  queue workers run, so job-backed flows do work); enterprise modules off; CRUD API caching
-  on — plus anything specific to this change>
+- <the booted environment's own switched-off surfaces. Open Mercato's ephemeral env: no outbound
+  email (delivery disabled); scheduled jobs won't fire (scheduler off, though queue workers run,
+  so job-backed flows do work); enterprise modules off; CRUD API caching on>
+- <anything specific to this change you couldn't set up>
 ```
 
 Writing rules:
@@ -204,11 +230,13 @@ Writing rules:
 
 ### 7. Hand over
 
-Leave the instance running — that's the point of the skill. State plainly how to stop it, and that stopping destroys the container along with everything seeded. If you started it backgrounded, give the user the exact way to kill it.
+Leave the instance running — that's the point of the skill. Give the exact way to stop it, and describe stopping **as it will actually behave**: if this run booted the instance, stopping destroys the container and everything seeded; if it attached to one already running, `Ctrl+C` merely detaches and the runtime survives for whoever owns it. Telling a user their data was destroyed when it is still live — or the reverse — is a small lie with real consequences.
+
+Say what the run changed in their checkout, too: the branch it left them on, and whatever the bootstrap installed, generated or rebuilt (Hard rule 6).
 
 ## Things to remember
 
-- A reused instance is someone else's build until you've proven otherwise.
+- A reused instance is someone else's build, and the state file gives you nothing to prove otherwise. After a branch switch, boot fresh.
 - A 200 from login is not proof of authorization — make one authenticated call.
 - Demo data is a starting point, never an assumption.
 - If the click route contains no seeded or named record, the drive probably shows nothing.
