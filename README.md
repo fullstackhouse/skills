@@ -19,6 +19,7 @@ read what a counterparty changed in a contract.
 | [`ticket-refresh`](./skills/ticket-refresh/SKILL.md) | `pr-polish` for a tracker ticket: re-verify its body against reality — resolve every linked PR/issue (following supersessions), check whether an "upstream" fix already ships in the installed version, and rewrite claims the world has overtaken, then post one comment so watchers learn what changed. Body + comment only; never touches Status/Assignee. |
 | [`ticket-polish`](./skills/ticket-polish/SKILL.md) | `ticket-refresh`'s complement: refresh makes a body true, polish makes it legible. Restructure an accreted ticket — one canonical enumeration instead of parallel numbering, open work leads, history compressed to its surviving reasoning, a checkable DoD of only the remaining work, title re-trued. Form only, facts unchanged — it runs `ticket-refresh` itself when the body's facts have gone stale, so a neglected ticket needs one invocation, not two. |
 | [`spec-polish`](./skills/spec-polish/SKILL.md) | `ticket-polish` for a spec or design doc: a first screen a newcomer can stop after, the decision the doc asks of its reader up front, the argument before the evidence, catalogues and traceability ids moved to appendices, mandated sections kept but in reader order. Form only, facts unchanged — spot-checks the spec's evidence against the code first and refuses to polish stale claims. |
+| [`docs-audit`](./skills/docs-audit/SKILL.md) | Audit a repo's documentation and agent instructions against the house conventions, then fix the mechanical and propose the rest: instruction-budget overflow (the rules an agent never receives), `CLAUDE.md`/`AGENTS.md` drift, commands that no longer resolve, dead links, unindexed docs, spec-convention breaks, state docs narrating their own history. Ships a CI gate so the rules hold without re-running it. `--audit-only` writes nothing. |
 | [`review-queue`](./skills/review-queue/SKILL.md) | Triage every PR awaiting your review: classify the queue, fan out one read-only reviewer subagent per PR, merge into a linked triage table (verdicts, draft comments, cross-PR conflicts). Posts nothing without explicit per-action approval. |
 | [`bug-hunt`](./skills/bug-hunt/SKILL.md) | Reproduce → diagnose → failing-test → fix a reported bug at the narrowest correct layer. Forbids speculative fixes; files a tracker task on give-up. |
 | [`flake-hunt`](./skills/flake-hunt/SKILL.md) | Root-cause and fix a flaky Playwright e2e test. Forbids timeouts/retries/skip; files a tracker task on give-up. |
@@ -29,7 +30,7 @@ read what a counterparty changed in a contract.
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 | [`zoom-out`](./skills/zoom-out/SKILL.md) | Break mid-task tunnel vision: restate the goal from the original request, mark sunk work ignorable, measure the decision space, get a fresh-context second opinion (subagent that never sees the current approach), present 2–3 options-in-kind + a recommendation. Analysis only until the user picks. |
 
-`explain`, `brainstorm`, `kickoff`, `overnight`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `brainstorm`, `kickoff`, `overnight`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `docs-audit`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -107,7 +108,7 @@ The repo-agnostic skills (`deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`;
   (e.g. `docs/specs/YYYY-MM-DD-slug.md`) or a tracker/Notion location, plus how deep a spec
   is expected to go. `kickoff` writes its spec there when the work warrants one, and
   `brainstorm` keeps its handoff briefs beside them (`<specs dir>/briefs/`); `spec-polish`
-  reads the same knob to find the specs on a branch and the sections the repo mandates. Without the
+  reads the same knob to find the specs on a branch and the sections the repo mandates; `docs-audit` uses it to locate the spec directory it grades for template, index and naming. Without the
   knob or a discoverable convention, `kickoff` writes the plan into the tracker ticket
   itself (when a Tracker is configured) or the PR description, and `brainstorm` falls back
   to `.context/briefs/` when `.context/` exists (otherwise it asks where briefs go).
