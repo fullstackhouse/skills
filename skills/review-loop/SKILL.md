@@ -46,15 +46,22 @@ Create `<scratch>/<slug>/ledger.md`. It is the orchestrator's memory and the one
 
 On a PR target, seed the ledger with the review comments already on it — human and bot, resolved threads excluded — as `inherited` findings. They enter the loop like any other finding: verified in phase 4, fixed in phase 5. A loop that ignores the review that prompted it is theatre.
 
-### 2. Round — fan out blind reviewers
+### 2. Round — fan out blind reviewers running the repo's own review
 
-Launch one read-only subagent per lens, concurrently. Default lenses, each a genuinely different failure mode rather than the same reviewer three times:
+**First, pick the standard the loop is converging on.** The exit condition is "the *next real* review finds nothing", so the reviewers must apply the review this change is actually headed for — not a checklist invented here:
+
+- **The repo has an installed review skill** (`om-code-review` under `.agents/skills/` or `.claude/skills/`, or whatever the agent instructions name as the review engine) → each subagent runs **that skill**, verbatim, on this diff, and reports in its severity scale and verdict rule. Split the fan-out across its checklist sections so the round parallelises without each agent re-reading everything. Skip its validation gate inside the round — that's phase 5's targeted checks and CI's job, and running a full gate per lens per round is what makes this loop too expensive to run.
+- **No installed engine** (the usual case in a client repo) → the built-in lenses below, plus the repo's own `CODE_REVIEW.md`, `BACKWARD_COMPATIBILITY.md` and agent instructions when they exist. This is also the path that front-loads what `deliver` would otherwise discover one 25-minute Copilot round at a time.
+
+Record which standard ran; phase 7's claim is only as strong as the checklist behind it.
+
+Launch one read-only subagent per lens or checklist section, concurrently. Default lenses, each a genuinely different failure mode rather than the same reviewer three times:
 
 1. **Correctness & data** — wrong results, lost writes, unhandled states, unbounded queries, concurrency.
 2. **Security & tenancy** — authz, cross-tenant reads, secrets, injection, what leaves the machine.
 3. **Tests** — would each new test fail against the pre-change code? Is a required path untested? Is a mock asserting itself?
-4. **Repo conventions** — the instructions gathered above, applied literally.
-5. **Claims vs code** — does the doc / spec / PR body / commit message describe what the diff actually does? On a docs- or spec-shaped diff this lens does the heavy lifting: check every internal cross-reference the document makes against the document's own other sections.
+5. **Repo conventions** — the instructions gathered above, applied literally.
+6. **Claims vs code** — does the doc / spec / PR body / commit message describe what the diff actually does? On a docs- or spec-shaped diff this lens does the heavy lifting: check every internal cross-reference the document makes against the document's own other sections.
 
 Each prompt carries: the diff, the repo rules, the target's genre, read access to the repo, and the **open** findings from the ledger as bare `file:line` + claim, so the same thing isn't re-litigated. Each returns findings as severity + `path/file.ts:LINE` + the claim + the evidence that establishes it + a suggested direction, or `None.` with a list of what it checked.
 
@@ -114,16 +121,17 @@ One carve-out to the exit: **a round that changed a security boundary** — auth
 - **Fixed**, one line each with the commit.
 - **Rejected**, with the refutation — so the next reviewer doesn't spend the finding again.
 - **Yours** — the judgement calls, stated as decisions to make, not as work to do.
-- **The claim, exactly as strong as it is:** *N consecutive independent passes under these lenses found nothing.* Not *this change is clean*, and not *a reviewer will find nothing*. Name the lenses that ran and anything they structurally can't see (no browser, no production data, no runtime). On a change that has already had human review rounds each finding something new, say so — it's the honest prior on what round N+1 by a human would turn up.
+- **The claim, exactly as strong as it is:** *N consecutive independent passes under these lenses found nothing.* Not *this change is clean*, and not *a reviewer will find nothing*. Name the standard that ran — the installed engine, or the built-in lenses — and anything it structurally can't see (no browser, no production data, no runtime). On a change that has already had human review rounds each finding something new, say so — it's the honest prior on what round N+1 by a human would turn up.
 - **Next step**: `deliver` to ship it, `review-queue` if someone else's eyes are the actual gate.
 
 ## Hard rules
 
 1. **The reviewer never sees the rationale, the round number, or the ledger.** A leaked hint invalidates the round — rewrite the prompt rather than caveat the result.
 2. **Dedupe against every finding ever seen, rejected included.** Otherwise the loop cannot go dry.
-3. **Never fix an unverified finding.** Refutation is cheaper than the change it prevents.
-4. **Nothing is posted, pushed, or merged** — not a comment, not a thread resolution, not a tracker move.
-5. **Never widen scope under cover of a finding.** Beyond this change's purpose is a `yours`.
-6. **A dry round is earned, not declared.** `None.` without a list of what was checked is a failed round — re-run that lens.
-7. **Never run a full test suite.** Targeted runs on touched files; CI owns the rest.
-8. **Report the curve, never just the verdict.** A loop that stopped at the cap, or on a disagreement, says so — "clean" and "out of rounds" are different outcomes and only one of them is finished.
+3. **Converge on the review the change is headed for.** Where the repo has a review engine, the rounds run it — a loop that goes dry against a checklist nobody else applies has proven nothing about the next real review.
+4. **Never fix an unverified finding.** Refutation is cheaper than the change it prevents.
+5. **Nothing is posted, pushed, or merged** — not a comment, not a thread resolution, not a tracker move.
+6. **Never widen scope under cover of a finding.** Beyond this change's purpose is a `yours`.
+7. **A dry round is earned, not declared.** `None.` without a list of what was checked is a failed round — re-run that lens.
+8. **Never run a full test suite.** Targeted runs on touched files; CI owns the rest.
+9. **Report the curve, never just the verdict.** A loop that stopped at the cap, or on a disagreement, says so — "clean" and "out of rounds" are different outcomes and only one of them is finished.
