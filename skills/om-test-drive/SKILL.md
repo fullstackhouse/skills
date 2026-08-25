@@ -46,7 +46,7 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 ### 1. Resolve the target
 
 - **PR argument** → verify the tree is clean, then `gh pr checkout <N> --repo <owner/name>`. Pass `--repo` explicitly: a checkout with several remotes (a fork alongside its upstream) usually has no default repo set, and bare `gh pr checkout` just errors out. Take the change surface from `gh pr diff <N> --repo <owner/name>` — scope that call too, or an unqualified number can resolve a PR in the *other* repo of a fork/upstream pair.
-- **No argument** → the current branch against the repo default (`git diff <default>...HEAD`; derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`). **Fetch the base first.** A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong. **Include everything the build will see** — the instance is compiled from the working tree, so the surface must cover `git diff`, `git diff --staged`, *and* untracked source (`git status --porcelain` rows starting `??`). Untracked files are the trap: a brand-new route or component is invisible to every `git diff` form, so the handover would claim the change has no such surface while that surface is live in the app. If untracked source is present, fold it in or stop and say why.
+- **No argument** → the current branch against the repo default, diffed against the **remote-tracking** ref: `git fetch origin <default>` then `git diff origin/<default>...HEAD`. Derive the default via `gh repo view --json defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`, and use that same `origin/<default>` ref again in Phase 4. Fetching updates `origin/<default>`, **not** your local `<default>` branch — diffing the local one is how you get the stale surface even though you just fetched. A local base ref is only as fresh as your last fetch, and a stale one silently turns a 15-file change into a 4,000-file diff — every conclusion drawn after that is wrong. **Include everything the build will see** — the instance is compiled from the working tree, so the surface must cover `git diff`, `git diff --staged`, *and* untracked source (`git status --porcelain` rows starting `??`). Untracked files are the trap: a brand-new route or component is invisible to every `git diff` form, so the handover would claim the change has no such surface while that surface is live in the app. If untracked source is present, fold it in or stop and say why.
 
 State the target and the HEAD sha + subject in one line before doing anything expensive, so the user can stop you if you picked the wrong thing. You'll need that sha again in Phase 2 and in the handover.
 
@@ -93,7 +93,7 @@ Map the error you get back to the rung you skipped:
 
 Note the trap in the third: `initialize` applies every migration successfully and *then* dies, so a codegen problem presents as a database one. Don't reach for `--verbose` on any of these — it adds log volume, not the missing artifact.
 
-**A throwaway instance runs in production mode, so dev-safe placeholders become hard failures.** `apps/mercato/.env` ships `JWT_SECRET=change-me-dev-secret` (straight out of `.env.example`), and the app's own production guard refuses to start on a known placeholder secret. The build succeeds, the server starts, and *then* it exits — the boot reports only `Application process exited before readiness check`, with the actual refusal buried in the app's stderr where you'll only see it under `--verbose`. Supply real secrets for the run instead:
+**A throwaway instance runs in production mode, so dev-safe placeholders become hard failures.** The app `.env` — `apps/mercato/.env` in the monorepo, the root `.env` on a flat scaffold — ships `JWT_SECRET=change-me-dev-secret` straight out of `.env.example`, and the app's own production guard refuses to start on a known placeholder secret. The build succeeds, the server starts, and *then* it exits — the boot reports only `Application process exited before readiness check`, with the actual refusal buried in the app's stderr where you'll only see it under `--verbose`. Supply real secrets for the run instead:
 
 ```bash
 JWT_SECRET=$(openssl rand -hex 32) AUTH_SECRET=$(openssl rand -hex 32) \
@@ -102,7 +102,7 @@ JWT_SECRET=$(openssl rand -hex 32) AUTH_SECRET=$(openssl rand -hex 32) \
 
 Prefix whichever command the ladder actually chose — on a scaffold that's `yarn test:integration:ephemeral:start` or the `yarn --cwd apps/mercato exec …` form, not the monorepo's `yarn mercato`.
 
-Pass them in the environment; **do not edit the repo's `.env`** — it's the user's file and this skill is read-only on the tree (Hard rule 6). Treat any "exited before readiness" as this class of problem until `--verbose` proves otherwise: the app process failing *after* a clean build is a configuration refusal far more often than a code fault.
+Pass them in the environment; **do not edit the repo's `.env`** — it's the user's file and this skill is read-only on the tree (Hard rule 6). **Read the error before applying this.** `Application process exited before readiness check` is the harness's generic symptom, and a startup crash introduced *by the change under test* produces exactly the same line — that one is a finding, not an obstacle. So re-run with `--verbose` (or read the app's stderr) and apply the secret override only when the refusal is actually printed. Retrying with fresh credentials on reflex costs another cold boot and, worse, hides the bug you were sent to look at.
 
 **Resolve the boot command** — first hit wins, and the last rung is a real probe rather than an assumption:
 
@@ -166,8 +166,11 @@ JAR=$(mktemp); trap 'rm -f "$JAR"' EXIT      # a live session credential — nev
 curl -s -c "$JAR" -X POST "$BASE_URL/api/auth/login" \
   -H 'content-type: application/x-www-form-urlencoded' \
   --data-urlencode 'email=admin@acme.com' --data-urlencode 'password=secret' -o /dev/null
-curl -s -b "$JAR" -o /dev/null -w '%{http_code}\n' "$BASE_URL/backend/<path>"
+CODE=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE_URL/backend/<path>")
+case "$CODE" in 2*) ;; *) echo "page probe failed: $CODE"; exit 1;; esac
 ```
+
+Fail on this one exactly as on the API probe. A 307 here means the cookie didn't take and a 404 means the route doesn't exist — either would otherwise walk straight into a handover whose click route Hard rule 1 claims was resolved.
 
 The jar holds a working session for the whole drive. Put it in `mktemp` and delete it on exit — written into the repo it is one `git add -A` away from being published. (The cookies come back flagged `Secure` even on `http://127.0.0.1`; curl sends them anyway because it treats loopback as a secure context, so no HTTPS workaround is needed. If a future curl tightens that, the symptom is a 307 with the jar — not a silent pass.)
 
@@ -234,8 +237,9 @@ The deliverable. Inline in your final message:
 | <identifier> | <URL> | <POST /api/...> |
 
 ## What this drive can't show
-- Rendering is unverified — this drive proved the route resolves and the data persisted
-  through the API, not that the component paints it. That's the first thing to check.
+- Rendering is unverified — this drive proved the route resolves, and <for API seeds: that the
+  data persisted, read back through the API | for UI-form seeds: nothing about the record beyond
+  the form accepting it>. Not that the component paints it. That's the first thing to check.
 - <the booted environment's own switched-off surfaces. Open Mercato's ephemeral env: no outbound
   email (delivery disabled); scheduled jobs won't fire (scheduler off, though queue workers run,
   so job-backed flows do work); enterprise modules off; CRUD API caching on>
@@ -243,7 +247,7 @@ The deliverable. Inline in your final message:
 ```
 
 Writing rules:
-- Every URL is one you fetched authenticated. Every record is one you read back. Neither is a claim about what the screen looks like.
+- Every URL is one you fetched authenticated. Every API-created record is one you read back; a record created through a UI form is **labelled unverified**, because you didn't watch it save. Neither is a claim about what the screen looks like.
 - Say what the user should *see*, not just where to go. "Order ACME-1042 now shows a Partially shipped badge" beats "check the orders list".
 - Be honest about what you couldn't set up. A missing step named is useful; a missing step hidden wastes the user's afternoon.
 
