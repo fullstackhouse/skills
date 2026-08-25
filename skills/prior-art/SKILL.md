@@ -1,80 +1,94 @@
 ---
 name: prior-art
-description: Research how other systems actually solve a design problem, with every claim tied to a primary source. Use when invoked as "/prior-art", when the question is "how do other big players/systems do this?", "is X a good pattern?", "what's standard practice for Y?", "has anyone solved this already?", before committing to a non-obvious architectural decision, or when a spec/ADR/PR asserts what the industry does without citing anything. Read-only — it researches and recommends, it never implements.
+description: Research how other systems actually solve a design problem, with every load-bearing claim opened and checked by you. Use when invoked as "/prior-art", when the question is "how do other big players/systems do this?", "is X a good pattern?", "what's standard practice for Y?", "has anyone solved this already?", before committing to a non-obvious architectural decision, or when a spec/ADR/PR asserts what the industry does without citing anything. Read-only — it researches and recommends, it never implements.
 ---
 
 # prior-art
 
-You are running the **prior-art** skill. Someone is about to decide something and wants to know how the rest of the world decided it.
+Someone is about to decide something and wants to know how the rest of the world decided it.
 
-**The premise: this is the highest-confabulation question anyone asks an LLM.** "How does Stripe handle idempotency", "do big systems enable RCSI", "what do most teams do for X" — all of it produces fluent, confident, sourceless prose that is often part-invented, and it is *dangerous* precisely because it then gets pasted into a spec as justification. A wrong answer here doesn't lose an argument; it gets cited.
+**This is the highest-confabulation question anyone asks an LLM.** It returns fluent, sourceless prose about what Stripe or Postgres or "most teams" do, and it is dangerous precisely because it doesn't lose an argument — it gets *cited*. Your job is not to answer the question. It is to answer it in a form the reader can check.
 
-Your job is not to answer the question. It is to answer it **in a form the reader can check**.
-
-**Hard rule: read-only.** Research and recommend. Don't implement, don't edit the spec, don't post the comment — hand back text the user places.
+**Read-only.** Research and recommend; don't implement, don't edit the spec, don't post the comment.
 
 ## 1. Sharpen the question into a decision
 
-Restate what is actually being decided, in one sentence, as a choice between options: *"Should we enable read-committed snapshot isolation on the sync database, or keep the current locking behaviour and fix contention another way?"* Not *"is RCSI good?"* — no design property is good in the abstract, only under constraints.
+Restate what is being decided as a choice between named options: *"Grow our existing job record into a durable lease, or adopt an off-the-shelf durable-execution engine?"* Not *"is X good?"* — no design property is good in the abstract.
 
-Then write down **our constraints** — the three or four facts that make an outside answer transferable or not. Scale, write pattern, consistency requirement, team size, uptime budget, whether we control the schema, what we can't change. If you can't name them, ask; a survey without them ranks by fame and will mislead.
+A vague question cannot be researched, only answered plausibly. If you can't state the options, that *is* the first deliverable: sharpen it, say what you assumed, and continue.
 
 ## 2. Look inside before you look outside
 
-Cheapest source first, and the one most often skipped: search the consuming repo's `docs/`, specs, ADRs, `CLAUDE.md`/`AGENTS.md`, and the tracker for this exact decision. It is common to find that we already decided it, decided it once and drifted, or hit the failure mode the outside world is about to warn us of. Report that first — it outranks any external finding.
+Search the consuming repo — `docs/`, specs, ADRs, `CLAUDE.md`/`AGENTS.md` — and the tracker for this exact decision.
 
-## 3. Choose comparables by constraint, not by fame
+**This step outranks everything below it.** We have often already decided this, decided it and drifted, or already hit the failure the outside world is about to warn us of. An internal incident beats an external blog post: it happened to us, under our constraints, with consequences someone remembers. Report internal findings first and separately.
 
-Pick systems that **share our constraint**, then say why each qualifies. A niche database with our write pattern is worth more than a household name with a different one.
+## 3. Name the one axis that decides transferability
 
-**The big-player fallacy is the main failure mode of this skill.** "Stripe does X" is only evidence if Stripe's problem is our problem — usually they operate at a scale that justifies costs we can't carry, or under consistency requirements we don't have. Where a comparable is famous but not comparable, say so and use it as a *contrast*, not support.
+List our constraints, then do the work that matters: identify **the single axis along which comparable systems' answers diverge**. "Is this system the book of record?" "Does an external system own the transitions?" "Do they control the whole stack?"
 
-Favour targets whose behaviour is inspectable: open-source systems (you can read the code), vendors with real reference docs, and teams that publish postmortems. A closed system you can only guess about produces exactly the folklore this skill exists to filter.
+That axis, not a constraint list, is what sorts the evidence. Every included system gets one line: where it sits on the axis, and why that makes it comparable to us or a contrast.
 
-## 4. Sweep by source type, not by search box
+**Fame is not the axis.** "Stripe does X" is evidence only if Stripe's problem is our problem. Where a famous system sits on the far side of the axis, keep it as an explicit **contrast**, never as support.
 
-Fan out subagents — one per source class, because each finds what the others structurally cannot:
+## 4. Sweep by source class — with a budget
 
-- **Primary docs** — the vendor's or project's own documentation, including its "when not to use this" and limitations pages, which is where the honest trade-off usually hides.
-- **Source and configuration** — what the code, default config, or migration actually does. Beats every blog post.
-- **Field reports** — engineering blogs, postmortems, conference talks, mailing-list/RFC threads, issue trackers. Postmortems are the highest-value genre here: they describe the pattern *failing*, which docs never do.
-- **The dissent** — deliberately search for who argues against it and why. A survey that finds only advocates hasn't finished.
+Four classes, because each finds what the others structurally cannot: **primary docs** (including the "when not to use this" page, where the honest trade-off hides), **source and config** (what the code actually does — beats every blog post), **field reports** (postmortems, issue trackers, RFC threads — the highest-value genre, because they describe the pattern *failing*), and **the dissent** (who argues against it, and why).
 
-Each subagent returns claims with URLs, never prose summaries you'd have to re-verify.
+Delegating these to parallel subagents is fine, but the fan-out is this skill's most reliable way to fail. Bind it:
 
-**Queries go to third parties.** Phrase every one generically — no client names, repo names, internal ticket or spec IDs, module or env-var prefixes, hostnames, or paths. "SQL Server snapshot isolation for an ERP sync workload", never the client's system by name. This is the same standing rule as the publishing skills; searching is publishing.
+- **Search budget is finite and shared.** Give each sweep a hard query cap and **reserve at least a third of the total for step 5**. An unbudgeted fan-out spends everything on breadth and leaves nothing for checking.
+- **Run the dissent sweep first.** It's the one a hard rule protects and the first casualty of an exhausted budget.
+- **Sanitize the sweep prompts explicitly.** Subagents inherit the consuming repo's `CLAUDE.md`/`AGENTS.md` and mine it for specifics; telling them to "stay generic" does not work, because they infer the client's products and vendors from that inherited context and search for them *by name*. Give each sweep the sanitized question text plus an explicit list of terms it may not put in a query.
+- **Where two sweeps disagree** about the same system, neither claim is usable until you check it yourself.
+- **A sweep that returns nothing has two meanings** — nothing exists, or the tool failed. Record which. "No dissent found" from a sweep whose queries were all refused is not a finding, it's a missing measurement; label it as one and re-run before anyone cites the silence.
 
-## 5. Grade every claim, and let the weak ones die
+If search is unavailable, say so and fall back to fetching known URLs directly — but note that field reports and dissent are exactly the classes you cannot reach by guessing URLs, so the survey is incomplete in its most important dimension.
 
-Label each finding:
+## 5. Verify before you cite
 
-- **Documented** — a specific URL says this. Quote or link it.
-- **Inferred** — you read the code/config and concluded it. Say what you read.
-- **Folklore** — widely repeated, no source found.
+**Open, yourself, every source the verdict rests on.** Not a sample of them — all of them.
 
-**Folklore may appear in the report but may never be used as justification**, and label it as such rather than dropping it silently — "everyone says X and nobody documents it" is itself a finding about how well-founded the practice is. If a claim you'd have liked to make has no source, say "couldn't verify" and move on. An honest three-source answer beats a confident ten-source one, and *"there is no consensus"* is a legitimate, common, and useful result.
+This is the step that separates this skill from asking the question directly, and it is the one under budget pressure to disappear. Fabricated attributions arrive confidently formatted and correctly labelled: a page cited for a claim it never makes, one platform's source code credited to another, a real quote pinned to the wrong URL. Nothing about the shape of a delegated claim reveals this. Only opening it does.
 
-Two findings this format must be able to express, because a fill-in-the-options table can't:
+Budget for this before you spend on breadth. **A verified survey of three systems beats an unverified one of ten.**
 
-- **They avoid the situation.** The most valuable answer is often that comparable systems arranged things so the question never arises. That reframes the decision instead of settling it.
+## 6. Grade on two axes
+
+Every claim carries both:
+
+- **Strength** — `documented` (a specific page says it), `inferred` (you read the code/config and concluded it; say what you read), or `folklore` (widely repeated, no source found).
+- **Provenance of the check** — `opened` (you fetched it) or `secondhand` (a sweep reported it; nobody opened it).
+
+The second axis exists because the first is a self-report. A well-formatted wrong attribution passes the strength label cleanly. **`documented` + `secondhand` is a claim about a subagent's formatting, not about the world** — it may appear in the evidence, never in the verdict.
+
+Folklore may be reported and may never justify a decision — "everyone says it and nobody documents it" is itself a finding about how well-founded the practice is. Record what you dropped and why; dropped claims are among the most useful output.
+
+Three results this format must be able to express, because an options table can't:
+
+- **They avoid the situation.** Often the most valuable answer: comparable systems arranged things so the question never arises. That reframes the decision instead of settling it.
 - **They do it, and regret it.** Adoption is not endorsement. Prefer sources that report the outcome.
+- **There is no consensus** — legitimate and common. Equally: where a real consensus exists, say so plainly. This licence is not an instruction to hedge.
 
-## 6. Verdict, against our constraints
+## 7. Two artifacts, not one
 
-Close with the part that makes the research usable:
+**The verdict** — about a page, the thing that gets pasted:
 
-- **What comparable systems do**, in a few lines — grouped by the *reason* they chose it, not by company.
-- **What that implies for us**, given the step-1 constraints — including where our situation genuinely differs and the majority answer therefore doesn't apply.
-- **One recommendation**, with the strongest argument against it stated fairly.
-- **What remains unknown**, and what would settle it — a benchmark to run, a doc to find, a person to ask. This list is not optional; it's what stops the reader treating the survey as complete.
+- what comparable systems do, grouped by the *reason* they chose it, not by company;
+- what that implies for us on the step-3 axis — including, when it applies, that **the majority answer doesn't transfer**, which is a headline and not a footnote;
+- one recommendation, with the strongest argument against it stated fairly;
+- what remains unknown and what would settle each — a measurement, a doc, a person to ask.
 
-Size it to drop into the spec section, ADR, ticket comment, or PR reply the user asked for — not a standalone essay. Hand it back; let them place it.
+**The evidence** — a separate file, as long as it needs to be: graded findings, what was dropped, the sweep record, and every query issued verbatim.
+
+Keep them separate. One document that is both a verdict and an evidence file always becomes the evidence file, and nobody pastes a 4,000-word essay into a spec.
 
 ## Hard rules
 
-1. **No unsourced claim about a named system.** Documented, inferred, or explicitly folklore. There is no fourth category, and "I know this" isn't one.
-2. **Comparable by constraint, never by fame.** Every included system carries one line on why its problem is our problem.
-3. **"No consensus", "they avoid it", and "couldn't verify" are results.** Manufacturing a clean majority out of thin evidence is the failure this skill exists to prevent.
-4. **Search queries carry no client-identifying detail.** Generic phrasing, always.
-5. **Read-only.** No edits, no posts, no implementation — the user places the output.
-6. **End with a verdict and an unknowns list.** A survey without a recommendation hands the work back; a recommendation without unknowns oversells it.
+1. **Every claim in the verdict is `opened` by you.** `secondhand` stays in the evidence file.
+2. **Comparable by axis, never by fame.** Each system carries one line on where it sits and why that transfers.
+3. **Budget the fan-out; dissent goes first.** Reserve a third of the search budget for step 5.
+4. **Search queries carry no client-identifying detail** — and the leak comes from *inherited repo context*, not from what you type, so sanitize the sweep prompts explicitly.
+5. **Distinguish "nothing found" from "couldn't look".** A tool failure reported as an absence is the worst output this skill can produce.
+6. **"No consensus", "they avoid it", "couldn't verify" are results.** Manufacturing a majority out of thin evidence is the failure this skill exists to prevent.
+7. **Read-only, and two artifacts.** The user places the output.
