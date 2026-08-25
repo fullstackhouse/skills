@@ -29,8 +29,9 @@ read what a counterparty changed in a contract.
 | [`docx-diff`](./skills/docx-diff/SKILL.md) | Reconstruct a redline between two `.docx` versions when the counterparty edited without tracked changes: pandoc → sentence-level unified diff → a classification of which changes are material and who they favour. Needs `pandoc`. |
 | [`bro`](./skills/bro/SKILL.md) | Restate the last message in plain human language — no jargon, one human talking to another. Manual-invoke only. |
 | [`zoom-out`](./skills/zoom-out/SKILL.md) | Break mid-task tunnel vision: restate the goal from the original request, mark sunk work ignorable, measure the decision space, get a fresh-context second opinion (subagent that never sees the current approach), present 2–3 options-in-kind + a recommendation. Analysis only until the user picks. |
+| [`prior-art`](./skills/prior-art/SKILL.md) | "How do other big players do this?" — answered in a checkable form: sharpen into a decision, look inside our own repo first, name the one axis that decides transferability, sweep by source class on a budget (dissent first), **open every source the verdict rests on yourself**, grade on strength × who-checked-it, and split the output into a paste-ready verdict + a separate evidence file. Read-only. |
 
-`explain`, `brainstorm`, `kickoff`, `overnight`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `docs-audit`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, and `design-explore` are **repo-agnostic** — they derive
+`explain`, `brainstorm`, `kickoff`, `overnight`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `docs-audit`, `review-queue`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, `design-explore`, and `prior-art` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
