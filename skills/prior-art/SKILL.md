@@ -53,14 +53,21 @@ This is the step that separates this skill from asking the question directly, an
 
 Budget for this before you spend on breadth. **A verified survey of three systems beats an unverified one of ten.**
 
+Two mechanics make the check real rather than asserted:
+
+- **Quote, don't cite.** Every documented claim in the verdict carries a verbatim phrase from the page, not just a URL. You cannot quote a page that doesn't say it, and the reader can check it in one click. A citation without a quote is an assertion that you read something.
+- **Date the state-bearing claims.** "Still open", "deprecated", "the default is", "no longer supported" — these were true once and rot silently. Record what you saw and when, or the claim's failure mode is being *stale* rather than wrong, which is far harder for a reader to spot.
+
 ## 6. Grade on two axes
 
 Every claim carries both:
 
-- **Strength** — `documented` (a specific page says it), `inferred` (you read the code/config and concluded it; say what you read), or `folklore` (widely repeated, no source found).
+- **Strength** — `documented` (a specific page says it, quoted), `inferred` (you read the code/config and concluded it; say what you read), or `folklore` (widely repeated, no source found).
 - **Provenance of the check** — `opened` (you fetched it) or `secondhand` (a sweep reported it; nobody opened it).
 
 The second axis exists because the first is a self-report. A well-formatted wrong attribution passes the strength label cleanly. **`documented` + `secondhand` is a claim about a subagent's formatting, not about the world** — it may appear in the evidence, never in the verdict.
+
+**Do not read the strength labels as a confidence ranking.** `inferred` from reading the source is in practice the *most* reliable grade, because reading code is expensive enough that nobody claims it falsely, and because source is what runs while docs drift. `documented` is the least reliable, because citing a page is cheap and confident-looking. Hedges are similarly trustworthy — a hedge costs the writer something, so it is rarely false. Ranking by grade rather than by what you checked inverts the real reliability order.
 
 Folklore may be reported and may never justify a decision — "everyone says it and nobody documents it" is itself a finding about how well-founded the practice is. Record what you dropped and why; dropped claims are among the most useful output.
 
@@ -85,7 +92,7 @@ Keep them separate. One document that is both a verdict and an evidence file alw
 
 ## Hard rules
 
-1. **Every claim in the verdict is `opened` by you.** `secondhand` stays in the evidence file.
+1. **Every claim in the verdict is `opened` by you, and every documented one is quoted.** `secondhand` stays in the evidence file.
 2. **Comparable by axis, never by fame.** Each system carries one line on where it sits and why that transfers.
 3. **Budget the fan-out; dissent goes first.** Reserve a third of the search budget for step 5.
 4. **Search queries carry no client-identifying detail** — and the leak comes from *inherited repo context*, not from what you type, so sanitize the sweep prompts explicitly.
