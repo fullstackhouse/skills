@@ -31,6 +31,8 @@ That axis, not a constraint list, is what sorts the evidence. Every included sys
 
 **Fame is not the axis.** "Stripe does X" is evidence only if Stripe's problem is our problem. Where a famous system sits on the far side of the axis, keep it as an explicit **contrast**, never as support.
 
+**Engineering maturity is a separate weight — and it changes what you read the system for, not whether you read it.** A team with a strong engineering record chose deliberately, so their choice is evidence about the design. A legacy or poorly-built system's choice is evidence of nothing — but its *failures* are, and they are often the best evidence available anywhere, because a mature system's bugs in this area were found and quietly fixed years ago while a legacy one's are public, reproducible, and frequently still open. **Read mature systems for what they chose; read legacy systems for what broke.** Neither is disqualified — they answer different questions, and a survey drawing only on the admirable ones has no failure data in it at all.
+
 ## 4. Sweep by source class — with a budget
 
 Four classes, because each finds what the others structurally cannot: **primary docs** (including the "when not to use this" page, where the honest trade-off hides), **source and config** (what the code actually does — beats every blog post), **field reports** (postmortems, issue trackers, RFC threads — the highest-value genre, because they describe the pattern *failing*), and **the dissent** (who argues against it, and why).
