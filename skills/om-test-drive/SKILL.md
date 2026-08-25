@@ -11,7 +11,7 @@ This is **not** `explain` (which translates a diff into a merge decision without
 
 **Scope: Open Mercato first, and honestly so.** The boot step degrades to any repo that documents a disposable environment, but the auth and seeding phases are written around Open Mercato's routes. On another stack this skill boots and then needs its profile to supply the auth contract — without that, stop and say so rather than half-driving an app you can't log into.
 
-A URL handed over without a completed login round-trip and a named record to look at is a **failure of this skill**, not a success. "It's running on port 5001" is setup, not a test drive.
+A URL handed over without a completed login round-trip is a **failure of this skill**, not a success — and so is one whose click route names nothing to look at, whenever the environment could have carried such a record. The single exception is an honest empty state: under `--no-seed`, or where the change genuinely has no record to point at, say so in as many words. "It's running on port 5001" is setup, not a test drive.
 
 ## Project specifics — read these first
 
@@ -51,6 +51,8 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 State the target and the HEAD sha + subject in one line before doing anything expensive, so the user can stop you if you picked the wrong thing. You'll need that sha again in Phase 2 and in the handover.
 
 ### 2. Boot a throwaway instance
+
+**A documented profile wins over sniffing.** If the repo's `## Skill profile` carries a **Throwaway instance** entry, use it and skip the ladder — the rungs below key on script names that a non-Mercato repo can define too, and losing that race means applying Open Mercato's bootstrap, auth and route assumptions to a stack that shares nothing but a script name. Only when no profile is documented should you infer the stack from the ladder.
 
 **Resolve the boot command before checking anything.** The preconditions and the bootstrap below are Open Mercato's, and applying them to a repo that boots some other way would reject a perfectly good environment for lacking Node or Docker. Run the discovery ladder first; only if it lands on the Mercato rungs do the rest of this phase's specifics apply.
 
