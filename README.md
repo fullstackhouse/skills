@@ -9,6 +9,7 @@ read what a counterparty changed in a contract.
 | Skill | Purpose |
 |-------|---------|
 | [`explain`](./skills/explain/SKILL.md) | Explain an existing change (working tree / branch / PR / commit) in plain language with a clearly-hedged merge recommendation. Read-only. |
+| [`om-test-drive`](./skills/om-test-drive/SKILL.md) | `explain`'s hands-on counterpart, for Open Mercato: boot the change on a throwaway instance (`mercato test:ephemeral`) → prove login with a real HTTP round-trip → seed the data that makes it visible through the app's own API → hand back a click route with a live URL and credentials. Carries the bootstrap ordering and the production-mode config traps that make a first boot fail. No browser, so it proves routing and data, not rendering — and says so. Posts nothing. |
 | [`brainstorm`](./skills/brainstorm/SKILL.md) | Divergent conversation before any artifact exists: question the idea, weigh alternatives incl. building nothing, reality-check the tracker, survive a fresh-context challenger — then converge on one routed next step (drop it / park as ticket / `kickoff` / `bug-hunt`) with a handoff brief. Read-only until the routing is confirmed. |
 | [`kickoff`](./skills/kickoff/SKILL.md) | Idea / brainstorm brief / ticket → ready-for-review PR: decides plan depth itself (spec in the repo's spec location, or straight to code), implements with tests, then runs `deliver --no-merge` for checks, PR, reviewer, and the feedback loop. Never merges. |
 | [`overnight`](./skills/overnight/SKILL.md) | A backlog → a stack of ready-for-review PRs, one per item: classify each item's *decision state*, order them into a dependency graph, batch every open question across every item into one interactive round, then run unattended — each item through `kickoff --base <parent branch>`. A failed item stops its descendants only. Never merges. |
@@ -86,8 +87,8 @@ between the two copies — that's expected, not a bug.
 
 ## Skill profile
 
-The repo-agnostic skills (`deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`; `explain` to a
-lesser extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
+The repo-agnostic skills (`deliver`, `upstream-pr`, `bug-hunt`, `flake-hunt`;
+`explain` to a lesser extent) derive most specifics at runtime from the consuming repo's `CLAUDE.md` /
 `AGENTS.md` / `package.json` scripts. For knobs that aren't derivable from docs, add a
 **`## Skill profile`** section to the consuming repo's root `CLAUDE.md`. Recognized knobs:
 
@@ -124,6 +125,17 @@ lesser extent) derive most specifics at runtime from the consuming repo's `CLAUD
   <branch>` and `kickoff --base <branch>` override it, which is how a stacked PR targets
   its parent instead of the base branch.
 - **Dev-server / port convention** (e.g. a Conductor worktree port rule) for repro/local runs.
+- **Throwaway instance** (`om-test-drive`) — how to stand up a disposable app + database, and
+  how to talk to it. Four fields: the **boot command**; where it **records its base URL**; the
+  **credentials** it guarantees; and the **auth contract** — login route, method, payload shape,
+  and whether it returns a bearer token or sets a session cookie. That last field is not
+  optional on a non-Mercato repo: the skill's verification and seeding phases are written around
+  Open Mercato's `POST /api/auth/login` → `{token}`, so without it the skill boots and then
+  stops rather than guessing at a login route. Open Mercato repos need no entry at all
+  (`yarn test:integration:ephemeral:start` → `.ai/qa/ephemeral-env.json` → `admin@acme.com` /
+  `secret`). If the only available environment is long-lived or shared, say so here —
+  `om-test-drive` then refuses to seed it and drives read-only, rather than asking for
+  permission it shouldn't act on.
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),
   and audience (e.g. non-technical business owner).
