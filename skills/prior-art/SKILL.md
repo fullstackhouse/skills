@@ -43,7 +43,7 @@ Delegating these to parallel subagents is fine, but the fan-out is this skill's 
 - **Run the dissent sweep first.** It's the one a hard rule protects and the first casualty of an exhausted budget.
 - **Sanitize the sweep prompts explicitly.** Subagents inherit the consuming repo's `CLAUDE.md`/`AGENTS.md` and mine it for specifics; telling them to "stay generic" does not work, because they infer the client's products and vendors from that inherited context and search for them *by name*. Give each sweep the sanitized question text plus an explicit list of terms it may not put in a query.
 - **Where two sweeps disagree** about the same system, neither claim is usable until you check it yourself.
-- **A sweep that returns nothing has two meanings** — nothing exists, or the tool failed. Record which. "No dissent found" from a sweep whose queries were all refused is not a finding, it's a missing measurement; label it as one and re-run before anyone cites the silence.
+- **A sweep that returns nothing has three meanings** — nothing exists, the tool failed, or the system doesn't publish. Record which. "No dissent found" from a sweep whose queries were all refused is not a finding, it's a missing measurement; label it as one and re-run before anyone cites the silence. For a closed enterprise system, all four sweeps coming back empty is the base rate and not evidence of anything — see step 6.
 
 If search is unavailable, say so and fall back to fetching known URLs directly — but note that field reports and dissent are exactly the classes you cannot reach by guessing URLs, so the survey is incomplete in its most important dimension.
 
@@ -55,6 +55,8 @@ This is the step that separates this skill from asking the question directly, an
 
 Budget for this before you spend on breadth. **A verified survey of three systems beats an unverified one of ten.**
 
+**What a failed verification means depends on the system.** In an open codebase, not finding the feature is strong evidence it isn't there. For a vendor that publishes nothing, failing to open a page tells you about their documentation, not about their design — that claim belongs in step 6 as `consensus`, not reported as an absence you never measured.
+
 Two mechanics make the check real rather than asserted:
 
 - **Quote, don't cite.** Every documented claim in the verdict carries a verbatim phrase from the page, not just a URL. You cannot quote a page that doesn't say it, and the reader can check it in one click. A citation without a quote is an assertion that you read something.
@@ -64,12 +66,31 @@ Two mechanics make the check real rather than asserted:
 
 Every claim carries both:
 
-- **Strength** — `documented` (a specific page says it, quoted), `inferred` (you read the code/config and concluded it; say what you read), or `folklore` (widely repeated, no source found).
-- **Provenance of the check** — `opened` (you fetched it) or `secondhand` (a sweep reported it; nobody opened it).
+- **Strength** — `documented` (a specific page says it, quoted), `inferred` (you read the code/config and concluded it; say what you read), `consensus` (no source is reachable, but the people who run the system daily would all recognise the claim — see below), or `folklore` (widely repeated, and nobody is positioned to correct it).
+- **Provenance of the check** — `opened` (you fetched it), `secondhand` (a sweep reported it; nobody opened it), or `recall` (you knew it; no page was involved at any point).
 
 The second axis exists because the first is a self-report. A well-formatted wrong attribution passes the strength label cleanly. **`documented` + `secondhand` is a claim about a subagent's formatting, not about the world** — it may appear in the evidence, never in the verdict.
 
-**Do not read the strength labels as a confidence ranking.** `inferred` from reading the source is in practice the *most* reliable grade, because reading code is expensive enough that nobody claims it falsely, and because source is what runs while docs drift. `documented` is the least reliable, because citing a page is cheap and confident-looking. Hedges are similarly trustworthy — a hedge costs the writer something, so it is rarely false. Ranking by grade rather than by what you checked inverts the real reliability order.
+### Closed systems, and the claims nobody can source
+
+Whole classes of comparable system — SAP, Palantir, Oracle, Monitor, most vertical ERPs — ship no source, and their documentation is marketing, paywalled, or renders only under JS. All four sweeps come back empty there, every time. **Treating that as "unverified" deletes the most expensive and often most comparable systems from every survey**, and leaves a verdict drawn entirely from whatever happens to be on GitHub. That is a bias, not neutrality, and it points the same way each time: toward small open projects and away from the incumbents the reader is actually choosing between.
+
+`consensus` is how those systems get back in. The test is not whether you can cite it — you can't, that's the premise — but whether the claim is **error-corrected by use**: would someone who works with the system every day object to this exact sentence? "SAP PS separates the WBS from the activity network" survives that test, because thousands of consultants would correct it if it were wrong. "SAP added that in 4.6C" does not — nobody's daily work depends on that being right in your head.
+
+So the line runs through grain, not through confidence:
+
+- **Admissible** — the architectural shape, the vocabulary the system uses for it, the trade-off it is famous for having made.
+- **Never** — field names, counts, defaults, versions, dates, prices. And **never a quote**: a remembered quote is a fabricated quote, and no hedge repairs it.
+- **Never the reason.** Recall gives you *what* a closed system does; the *why* is rarely published, and a reconstructed rationale is the most fluent thing an LLM produces. Step 7 groups systems by reason — a `consensus` system enters that grouping on its observable shape or stays ungrouped.
+
+Two containments keep this from swallowing the skill:
+
+- **Write it down before the sweep, not after.** Declared first, a recall claim is a prediction: confirmed, it upgrades to `documented`; contradicted, that's a finding worth more than either; unreachable, it stays `consensus` and the reader knows the search was tried. Declared after, it is unfalsifiable and arrives in exactly the shape the verdict wanted — which is what confabulation looks like from the inside.
+- **Never load-bearing alone.** `consensus` may corroborate, may contrast, may occupy the quadrant nothing else reaches. If deleting every `consensus` line would change the recommendation, the survey isn't finished — say that instead of leaning on them.
+
+Label them in the verdict sentence itself, not in a footnote. The failure this skill exists to prevent is laundering, not uncertainty: a reader who can see the grade can discount it.
+
+**Do not read the strength labels as a confidence ranking.** `inferred` from reading the source is in practice the *most* reliable grade, because reading code is expensive enough that nobody claims it falsely, and because source is what runs while docs drift. `documented` is the least reliable, because citing a page is cheap and confident-looking. Hedges are similarly trustworthy — a hedge costs the writer something, so it is rarely false. Ranking by grade rather than by what you checked inverts the real reliability order. `consensus` about a system's shape is routinely sounder than `documented` about one of its fields, for the same reason: the shape is the part thousands of people would have noticed was wrong.
 
 Folklore may be reported and may never justify a decision — "everyone says it and nobody documents it" is itself a finding about how well-founded the practice is. Record what you dropped and why; dropped claims are among the most useful output.
 
@@ -94,10 +115,11 @@ Keep them separate. One document that is both a verdict and an evidence file alw
 
 ## Hard rules
 
-1. **Every claim in the verdict is `opened` by you, and every documented one is quoted.** `secondhand` stays in the evidence file.
+1. **Nothing enters the verdict on a subagent's word.** Every `documented` claim is `opened` by you and carries a quote; `secondhand` stays in the evidence file. `consensus` may appear, graded in the sentence and never as the only support.
 2. **Comparable by axis, never by fame.** Each system carries one line on where it sits and why that transfers.
 3. **Budget the fan-out; dissent goes first.** Reserve a third of the search budget for step 5.
 4. **Search queries carry no client-identifying detail** — and the leak comes from *inherited repo context*, not from what you type, so sanitize the sweep prompts explicitly.
 5. **Distinguish "nothing found" from "couldn't look".** A tool failure reported as an absence is the worst output this skill can produce.
 6. **"No consensus", "they avoid it", "couldn't verify" are results.** Manufacturing a majority out of thin evidence is the failure this skill exists to prevent.
-7. **Read-only, and two artifacts.** The user places the output.
+7. **Recall gives you shape — never specifics, never a quote, never a reason** — and only if you wrote it down before the sweep ran.
+8. **Read-only, and two artifacts.** The user places the output.
