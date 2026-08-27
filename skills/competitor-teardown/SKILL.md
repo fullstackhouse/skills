@@ -49,6 +49,8 @@ Drive the session with whatever agentic browser the session has (Playwright MCP 
 
 **Work the jobs, not the menu.** Take the top 3–5 things the buyer said they need — in their words, from their transcript — and try to do each one, end to end, as the person who'd do it. Where you can't finish, that is the finding.
 
+**Never infer a control from its label — open it.** This is the single highest-yield habit in the whole step, because the misses it prevents are invisible: you don't know you skipped anything. A field called "Category" turns out to be a fixed two-value flag, not a taxonomy. A field called "Status" turns out to mean open/archived, while the real workflow state lives somewhere else entirely. A view named like a calendar turns out to be a board bucketed by deadline — and is the best answer in the product to the buyer's first question. Familiar words are the vendor's vocabulary, not yours: expand every dropdown, open every tab, click the view toggles you think you already understand. A label you didn't open is a guess you're about to write down as a finding.
+
 Capture as you go:
 
 - **Populate before you judge a view.** A product's core views are meaningless on an empty account, and a screenshot of a zero-state teaches nobody anything. Use the vendor's own demo data or templates, or create a few records shaped like the buyer's work — then the list, board, timeline, and rollup views show what they actually do. Related trap: **an empty state may be a loading state.** If a view claims nothing exists where the data model says something should, re-open it before you write that down; "no tasks" and "the table hadn't rendered yet" look identical and only one is a finding.
@@ -69,7 +71,9 @@ The list price is not the number. Three moves, each of which has flipped a verdi
 
 1. **Find the gate, not the price.** Which plan holds the feature they actually need? A product is cheap at the tier that doesn't do the job. Cite the plan comparison page verbatim for the feature's tier.
 2. **Compute at the scale they stated, not the scale they'll start at.** Per-seat pricing scales with the *success* of the rollout: the number that matters is list × the headcount they told you they're growing to. A tool that looks like a rounding error at the pilot can land on the same line as the enterprise ERP they already rejected on price.
-3. **Put it on the same horizon as our number.** One-time build vs recurring subscription, three years, both with promo pricing expired. Add what they'll still be paying for alongside it — the system this doesn't replace (see step 6) is a line item, not a footnote.
+3. **Put it on the same horizon as our number.** One-time build vs recurring subscription, three years. Add what they'll still be paying for alongside it — the system this doesn't replace (see step 6) is a line item, not a footnote.
+
+**Read the pricing toggle before you interpret the two numbers.** Two prices for one plan usually means *annual vs monthly billing*, not *promo vs list* — and the difference decides whether the bill jumps later. Getting this backwards hands the buyer a claim they can disprove in one click on the vendor's own page, which costs you the rest of the argument. Check the toggle, and prefer the vendor's **in-app** plan matrix over the public pricing page: it is usually the more detailed of the two and it prices for the seat count you select.
 
 Output a small table: plan / gated feature / cost at pilot size / cost at stated target / same-horizon total. Cite where each number came from.
 
@@ -83,6 +87,8 @@ Output a small table: plan / gated feature / cost at pilot size / cost at stated
 - **support docs for the workaround** ("to handle X, export to Excel and…");
 - **job ads** for what they're building next;
 - **review sites**, read only for the recurring complaint, never for the star rating.
+
+**Check whose mouth the sentence came out of.** Affiliate and sponsored reviews are written to sound official and rank above the vendor's own pages, so a quotable limitation lands in your notes attributed to the vendor when it belongs to a reviewer paid to link to them. The claim may still be true; its authority is not. Before a boundary quote goes in the verdict, confirm it on a domain the vendor controls — and if the vendor's own version is weaker, use the weaker one and say so.
 
 Quote verbatim, with URL and the date you read it. And apply the same rule you'd apply to a source: **a claim about a competitor's limits that you cannot quote or screenshot doesn't go in the verdict.**
 
@@ -108,6 +114,6 @@ Keep them separate. A document that is both becomes the evidence file, and nobod
 3. **Quote or screenshot, don't characterise.** Every claim about what the product does or doesn't do carries a verbatim phrase or a numbered screenshot. "It doesn't really handle X" is an opinion wearing a fact's clothes.
 4. **Date every state-bearing claim.** Products ship weekly; "the free plan includes" and "there's no API" rot silently, and stale is harder for a reader to catch than wrong.
 5. **Credentials at runtime only**, never in a file or a commit. Scrub the trial account's identity out of anything that leaves the repo.
-6. **Unreached is not absent.** A tier you couldn't buy into and a flow that wouldn't complete are recorded as missing measurements, in their own section.
+6. **Unreached is not absent — and the unmeasured list is not an exit ramp.** A tier you couldn't buy into and a flow that wouldn't complete are recorded as missing measurements, in their own section. But writing something down there *feels* like compliance, which makes the list the path of least resistance for anything you ran out of momentum for. So price each entry before it goes in: **if measuring it is one click, click it.** The list is for what you genuinely cannot reach — a plan you can't buy, an app you can't install, a scale you can't simulate — not for the last three things on a long run.
 7. **Never claim we win without stating where we lose.** The buyer has their trial open; a teardown that finds only weaknesses reads as marketing and loses the room. If the honest answer is that they're better at the thing being compared, that is the finding — take it to step 1's decision and re-scope.
 8. **Nothing outbound.** No purchases, no plan upgrades, no sales contact under a pretext, no posting the comparison anywhere. Publishing is a separate, human decision.
