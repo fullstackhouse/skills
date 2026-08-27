@@ -1,6 +1,6 @@
 ---
 name: ticket-polish
-description: Restructure a tracker ticket that has grown hard to read — pick the body shape its situation calls for (problem-first when the ticket is the only record of the problem, hub when a spec or sibling artifact carries it), collapse accreted sections and parallel numbering, compress history to the reasoning that must survive, guarantee a checkable DoD of only the remaining work, and re-true the title. Form only, facts unchanged — runs ticket-refresh itself first when the body's facts have gone stale. Use when a ticket has accreted through refreshes or scope changes, reads as a journal, opens mid-plan with no statement of what's actually broken, has nothing anyone can check off, or someone says "this ticket got complex — clean it up" or "this reads strangely". Args: a ticket URL/ID, or nothing to use the current branch's PR task line.
+description: Restructure a tracker ticket that has grown hard to read — pick the body shape its situation calls for (problem-first when the ticket is the only record of the problem, hub when a spec or sibling artifact carries it), rewrite it into the house emoji section grammar, collapse accreted sections and parallel numbering, compress history to the reasoning that must survive, guarantee a checkable DoD of only the remaining work, and re-true the title. Form only, facts unchanged — runs ticket-refresh itself first when the body's facts have gone stale. Use when a ticket has accreted through refreshes or scope changes, reads as a journal, opens mid-plan with no statement of what's actually broken, has nothing anyone can check off, or someone says "this ticket got complex — clean it up" or "this reads strangely". Args: a ticket URL/ID, or nothing to use the current branch's PR task line.
 ---
 
 # ticket-polish
@@ -52,15 +52,24 @@ Read the whole body — and the comment thread, which often holds structure the 
 
 One test: **is there a linked artifact — a spec, RFC, design doc, brief, or parent ticket — that states the problem and the reasoning, and is it still live?**
 
-- **No → the originating body.** This ticket is the only record of the problem, so it opens with one: problem → approach → what's left → why it's scoped this way → evidence → Done when → references. Skeleton: [`templates/originating.md`](./templates/originating.md).
-- **Yes → the hub body.** Restating the problem forks it, and the fork rots. Open with the link and track progress instead: what this tracks → what belongs here → steps → open questions → implementation history. Skeleton: [`templates/hub.md`](./templates/hub.md).
+- **No → the originating body.** This ticket is the only record of the problem, so it opens with one. Skeleton: [`templates/originating.md`](./templates/originating.md) — `🎯` the problem · `🔧` what we do about it · `🔍` the detail that matters · `⚠️` risk or exclusion · `✅` Done when.
+- **Yes → the hub body.** Restating the problem forks it, and the fork rots. Open with the link and track progress instead. Skeleton: [`templates/hub.md`](./templates/hub.md) — lead line + link · `📋` what's owned here · `✅` Steps · `❓` open questions · `⚠️` constraints · `📜` what has landed.
 
 A ticket **changes mode** when its upstream artifact is retired, absorbed, or closed. That is the usual cause of a body that opens mid-plan (§3) — it was a correct hub until the thing it hubbed onto went away. Check the link before trusting the shape: an artifact that has been parked is not carrying the problem any more.
 
+### The section grammar
+
+The same grammar the house uses for PR summaries, so a reader crossing from a review to a PR to a ticket meets one alphabet.
+
+- **The emoji and the order are fixed. The words after the emoji are yours.** Write the heading this ticket needs — `### 🎯 A failed backfill reads as success` — and fall back to the plain label — `### 🎯 The problem` — only when nothing sharper fits. On a collapsed tracker view the written heading is most of what anyone reads.
+- **Drop every section you have nothing real to say under.** Four sections of substance beat six with filler.
+- **Under two paragraphs, no headings at all.** Emoji headings over a three-line ticket are noise.
+- **`🔍` may appear twice in a long originating body** — once for open detail, once for what is already settled and must not be redone. Deliberate allowance, not an accident: an originating body has no history slot, and minting one is how a fixed set starts growing. A hub does carry `📜`, because tracking what landed is the whole point of a hub.
+
 ### Two invariants, whichever shape
 
-1. **The problem is stated somewhere** — in this body, or one click away under a link you have confirmed is live. Never nowhere.
-2. **A checkable DoD exists** — `Done when` in an originating body, the `Steps` checkboxes in a hub body. **Never both**; two lists of remaining work is the parallel-numbering decay of §3 rebuilt by hand.
+1. **The problem is stated somewhere** — under `🎯` in this body, or one click away under a link you have confirmed is live. Never nowhere.
+2. **Exactly one checkable DoD** — `✅ Done when` in an originating body, `✅ Steps` in a hub body. **Never both**; two lists of remaining work is the parallel-numbering decay of §3 rebuilt by hand. A single sentence is a valid DoD; a list is not mandatory.
 
 ### Budget
 
@@ -76,7 +85,6 @@ As `pr-polish` §4, one artifact over:
 - **No code identifiers in the problem statement** — a non-engineer reads that section. Identifiers belong below it.
 - **No journal narration** ("an earlier revision…", "after review we…") except where it changed the direction and a future reader needs the lesson — then one tight paragraph.
 - **No strikethroughs, no "edit:" patches.** Rewrite the paragraph; the tracker keeps page history.
-- **Headers only when the body needs them.** Empty headings under a two-sentence ticket are the cruft this skill removes.
 - **A full-body replace is appropriate** — unlike a refresh, restructuring *is* the job — but only after you have read the entire body; anything you didn't read, you're about to delete.
 - **Keep every link, in fewer words**, and keep the checked stamp at the foot — it is provenance, not a lede.
 

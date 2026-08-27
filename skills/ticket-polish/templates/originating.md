@@ -1,60 +1,61 @@
 <!--
 ORIGINATING BODY — use when no live artifact elsewhere states the problem.
-Delete every section this ticket doesn't need, and every comment including this one.
-Only "The problem" and "Done when" are mandatory.
+
+The emoji and their order are fixed. The words after the emoji are yours: write the
+heading this ticket needs. Drop every section you have nothing real to say under, and
+delete every comment including this one. Only 🎯 and ✅ are mandatory.
 -->
 
-## The problem
+### 🎯 {HEADLINE_NAMING_WHAT_IS_BROKEN}
 
 {{OBSERVABLE_SYMPTOMS_AND_THEIR_COST}}
 
 <!--
-What is broken or missing, in the terms of whoever feels it: who is blocked, how
-often, what it costs, numbers where known. No code identifiers here.
-A reader must be able to disagree with the plan below and still agree with this.
+What is broken or missing, in the terms of whoever feels it: who is blocked, how often,
+what it costs, numbers where known. No code identifiers here.
+A reader must be able to disagree with the plan below and still agree with this section.
+Nothing broken? Then this is the goal instead — same slot.
+Heading: "### 🎯 A failed backfill reads as success", not "### 🎯 The problem",
+unless nothing sharper fits.
 -->
 
-## The approach
+### 🔧 {HEADLINE_NAMING_WHAT_WE_DO_ABOUT_IT}
 
-{{ONE_PARAGRAPH_SHAPE_OF_THE_FIX}}
-
-<!-- Optional. Drop it when the work follows obviously from the problem. -->
-
-## What's left
-
-{{OPEN_WORK_ORDERED}}
+{{THE_PLAN_IN_A_PARAGRAPH_OR_A_SHORT_LIST}}
 
 <!--
-Open work only, ordered, each item worth having even if the next never happens.
+The open work, ordered, each item worth having even if the next never happens.
 One canonical enumeration — never a second list that maps onto this one.
+Someone in a hurry stops reading here.
 -->
 
-## Why it's scoped this way
+### 🔍 {HEADLINE_NAMING_THE_DETAIL_THAT_MATTERS}
 
-{{REASONING_THAT_MUST_SURVIVE}}
+{{EVIDENCE_MEASUREMENTS_REASONING_THAT_MUST_SURVIVE}}
 
 <!--
-Optional. Directions rejected and why, so nobody re-raises them; counter-intuitive
-states worth defending. The mechanics of how we got here shrink to a citation.
+Technical narration: names, measurements, repro, the reason behind the approach,
+directions rejected so nobody re-raises them, anything counter-intuitive.
+May appear twice in a long body — once for open detail, once for what is already
+settled and must not be redone. That is deliberate; do not invent a slot for history.
 -->
 
-## Evidence
+### ⚠️ {HEADLINE_NAMING_THE_RISK_OR_THE_EXCLUSION}
 
-{{MEASUREMENTS_REPRO_CITATIONS}}
+{{RISK_DEPENDENCY_OR_WHAT_IS_DELIBERATELY_NOT_IN_SCOPE}}
 
-<!-- Optional. Measurements, repro steps, scorecards, spec citations. Never deleted once here. -->
+<!-- Skip it when there is none. -->
 
-## Done when
+### ✅ Done when
 
-1. {{INDEPENDENTLY_CHECKABLE_CONDITION}}
-2. {{INDEPENDENTLY_CHECKABLE_CONDITION}}
+- [ ] {{INDEPENDENTLY_CHECKABLE_CONDITION}}
+- [ ] {{INDEPENDENTLY_CHECKABLE_CONDITION}}
 
 <!--
-Remaining work only — nothing already satisfied. Each condition checkable on its own,
-by someone who didn't write it. Conditions owned by a sibling ticket link there instead.
+Remaining work only — nothing already satisfied. Each condition checkable on its own, by
+someone who didn't write it. Conditions owned by a sibling ticket link there instead.
+A single sentence is a valid DoD; a list is not mandatory.
 -->
-
-## References
 
 {{LINKS_SIBLING_TICKETS_SOURCE_MATERIAL}}
 
