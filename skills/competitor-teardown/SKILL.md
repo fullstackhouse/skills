@@ -51,6 +51,7 @@ Drive the session with whatever agentic browser the session has (Playwright MCP 
 
 Capture as you go:
 
+- **Populate before you judge a view.** A product's core views are meaningless on an empty account, and a screenshot of a zero-state teaches nobody anything. Use the vendor's own demo data or templates, or create a few records shaped like the buyer's work — then the list, board, timeline, and rollup views show what they actually do. Related trap: **an empty state may be a loading state.** If a view claims nothing exists where the data model says something should, re-open it before you write that down; "no tasks" and "the table hadn't rendered yet" look identical and only one is a finding.
 - **Numbered, slugged screenshots**: `012-budget-line-single-amount-field.png`. The number is the order you walked; the slug is what a reader is looking at. A directory of `screenshot-3.png` is the archive failure in miniature.
 - **The failure states, deliberately.** The validation error, the empty state, the permission wall, the "contact sales", the greyed-out control. These are worth more than the happy path — the happy path is on their website already.
 - **The upgrade wall is the single most valuable screenshot in the run.** It is the exact point where the price model touches the feature the buyer needs, and it is what step 5 is built on.
