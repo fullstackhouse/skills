@@ -144,7 +144,8 @@ for f in files:
                               r'\bssh\b', r'\bscp\b', r'rollout status', r'\bkubectl\b'], runs))
         health = flag('health-check', hit([r'rollout status', r'curl[^\n]*(health|ready)', r'wait-for'], runs))
         local_cred = flag('machine-local-cred', hit([r'KUBECONFIG[\'"]?:\s*[\'"]?/', r'ci-kubeconfig'], envs))
-        netcred = flag('network-cred', hit([r'wireguard', r'wg-connect', r'WG_CONFIG', r'openvpn'],
+        netcred = flag('network-cred', hit([r'wireguard', r'wg-connect', r'WG_CONFIG', r'openvpn',
+                                            r'tailscale', r'headscale', r'TS_AUTHKEY'],
                                            uses + runs + envs + withs))
         gate = flag('always/failure-if', bool(re.search(r'always\(\)|failure\(\)', cond)))
         glue = flag('glue-action', hit([r'slackapi/', r'sticky-pull-request-comment', r'dorny/paths-filter',

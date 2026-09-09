@@ -54,7 +54,7 @@ One question decides most rows: **does this job build, run or test the app, and 
 - Short, and neither builds nor runs the app: the branch-protection required check, `if: always()` joiners, `notify-failure`, PR commenters, `paths-filter` jobs, cancel-workflows, labelers, deployment bookkeeping, config computation. Seconds of runtime, so nothing to gain — and the merge gate in particular should sit on the most boring infrastructure available.
 - Waits on an external system: `kubectl rollout status`, Cloud Run deploys, health checks, cron pollers. Faster cores buy nothing, and there is no reason to hand a third-party runner the cluster kubeconfig for no gain.
 - `self-hosted` or an unknown custom label. It is on that hardware for a reason — cluster LAN, on-disk kubeconfig.
-- Machine-local or network-scoped credentials: `KUBECONFIG` pointing at a file on the runner, a WireGuard peer config, SSH to a host that allowlists the runner's IP.
+- Machine-local or network-scoped credentials: `KUBECONFIG` pointing at a file on the runner, a WireGuard or tailscale/headscale join into someone's LAN, SSH to a host that allowlists the runner's IP.
 - **A self-triggering workflow that has been dormant** (lists itself in `paths:` and hasn't run in 60+ days — the inventory flags these). Listing itself is normal; dormancy is the problem: your edit runs it for the first time in months, and a pre-existing failure then looks like yours. If it fails on something unrelated to runners, revert that file to byte-identical, report the failure, and don't fix it here — not even with a comment in the file, because the comment is an edit and re-fires it.
 
 **Ask once**, in a single `AskUserQuestion`, with the numbers beside each item:
@@ -98,7 +98,7 @@ One question decides most rows: **does this job build, run or test the app, and 
 
 Keep any "free runner disk space" step — it still guards the image's own size. Multi-platform builds: one job per platform on the matching runner (`…-arm` for arm64), no QEMU.
 
-**Every migrated job gets `timeout-minutes`** if it lacks one. A stuck VM on either vendor otherwise burns GitHub's 6-hour default. Value: 1.5 × the slowest run in the baseline, rounded up, minimum 10.
+**Every migrated job gets `timeout-minutes`** if it lacks one. A stuck VM on either vendor otherwise burns GitHub's 6-hour default. Value: 1.5 × the slowest *healthy* run in the baseline, rounded up, minimum 10 — not the slowest run outright, which may be the very stall you are removing.
 
 **`.github/actionlint.yaml`** from [`templates/actionlint.yaml`](./templates/actionlint.yaml), `{{LABELS}}` = the labels you introduced (one `    - ` line each); no repo has one before this, so create it. actionlint otherwise reads the labels as typos.
 
