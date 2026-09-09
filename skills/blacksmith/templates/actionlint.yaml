@@ -1,0 +1,5 @@
+# actionlint only knows GitHub's own runner labels, so the Blacksmith ones read as
+# typos without this. Not wired into CI — for anyone running actionlint locally.
+self-hosted-runner:
+  labels:
+{{LABELS}}
