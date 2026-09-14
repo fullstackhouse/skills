@@ -168,8 +168,11 @@ Assign both up front — an unset variable interpolates to `""`, which matches n
 
 ```bash
 SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
+export REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
+export AUTHOR=$(gh pr view <N> --json author --jq .author.login)     # excluded everywhere
 ```
+
+`AUTHOR` belongs here, not in the fallback block below that first needed it: Phase 6 reads `env.AUTHOR` to recognise a review by anyone who isn't you, and a variable defined only on the timeout path would be empty on every other path — matching nothing, silently, in the exact shape this phase keeps warning about.
 
 `PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. One value serves both roles because `gh pr edit --add-reviewer` accepts a bot's **login**, not only its alias.
 
@@ -216,7 +219,6 @@ The success signal is a review arriving, not a request being visible — and Pha
 Use `reviewers` from the `## Skill profile` when the repo sets it. Otherwise derive a candidate — and **then actually request them**, which is the step whose absence started this whole phase:
 
 ```bash
-AUTHOR=$(gh pr view <N> --json author --jq .author.login)
 HUMAN=$(gh pr list --state merged --limit 20 --json reviews \
   --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER\")) | group_by(.) | max_by(length)[0] // empty")
 
@@ -248,6 +250,15 @@ Poll every ~60s for up to ~10 minutes. All three values come from `env` — `REV
 A poll loop must also distinguish jq's `null` (no match yet) from an **empty** result (a failed call, a broken filter): `[ "$R" != "null" ]` alone treats the empty string as a hit and exits the loop on the first hiccup, reporting no review while the bot is still working. Test for both.
 
 If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
+
+**A human review, once it exists, is accepted the same way — check for one before polling.** A previous run that timed out requested a human and stopped; if this phase only ever matched `REVIEWER`, that human's approval could never satisfy anything, and the skill would re-request the bot forever on a PR a person had already read:
+
+```bash
+gh pr view <N> --json reviews \
+  --jq '[.reviews[] | select(.author.login != env.AUTHOR and .commit.oid == env.HEAD_OID and (.state == "APPROVED" or .state == "COMMENTED"))] | sort_by(.submittedAt) | last'
+```
+
+A hit — from anyone, bot or human — is the round's review: read its inline comments the same way, record it below, and don't spend a round re-requesting. This is what makes "whichever review you accepted" a reachable instruction rather than a dead one.
 
 Also pull inline review comments (most feedback is line comments, not the top-level review body):
 
@@ -307,7 +318,7 @@ If a check genuinely fails, **fix it and keep going** — don't stop and hand ba
    - **e2e flake** — re-run the failed job once (`gh run rerun <run-id> --failed`). If it fails a second time on the same spec with the same fingerprint, it's not a flake — diagnose properly (a `flake-hunt` skill exists for this; invoke it if the failure looks genuinely race-y). Never paper over with retries/skip/timeout.
    - **Migration / DB** — run the repo's migration check; if a manual migration is missing a snapshot/state update, fix per the repo's docs.
    - **Infra** — fix the config, re-run format + validate locally.
-3. Push the fix. CI restarts; loop back to monitoring.
+3. Push the fix. CI restarts; loop back to monitoring — **and if the fix changed shipped behaviour, re-enter Phase 5 before Phase 8.** Green checks are not a review: a behaviour-changing fix that goes straight from here to the merge decision carries code the reviewer never read, on a `reviewed_oid` for the old HEAD. Within budget that costs a round; out of budget it reports `blocked` (7c). A test-only, snapshot or workflow fix that changes no shipped behaviour keeps the direct path.
 
 Hard stop conditions (escalate to user, don't keep grinding):
 - Same failure recurs after 3 fix attempts on the same job — your hypothesis is wrong; stop and ask.
@@ -354,7 +365,7 @@ Read "in response to it" strictly, because it is the whole load-bearing width of
 
 ### 8. Auto-merge decision
 
-In no-merge mode this decision is already made: the condition is false by definition — surface the PR's state as ready-for-review and stop (Phase 8b never runs).
+In no-merge mode the *merge* is already decided against — the condition is false by definition, and Phase 8b never runs. **The assessment still happens.** `--no-merge` withholds the merge, not the truth about the PR: evaluate the conditions below anyway and report what they say — `ready-for-review` only when they all hold bar the merge itself, otherwise `awaiting-CI` or `blocked`, naming what blocks. Reporting ready-for-review unconditionally is how an exhausted budget with open findings, or a red pipeline, reaches a human as "done".
 
 If not much has changed since the skill started, just merge. "Not much" means the work since Phase 0's `start-sha` is mostly review-feedback fixups, not new functionality.
 
