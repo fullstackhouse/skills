@@ -149,13 +149,18 @@ if [ "$SEVERITY" = "blocking" ]; then CAP=5; else CAP=3; fi   # 7c: nits never b
 
 Three answers, in order:
 
-1. **`VERDICT=clean` and `REVIEWED` = `HEAD_OID`** → the PR already carries a current, clean review. Don't request one. Skip to Phase 8; re-requesting here would spend a round to re-confirm a result you already have, which the budget exists to prevent as much as it prevents grinding.
-2. **`ROUNDS` ≥ `CAP`** → exhausted. Skip the request and Phase 6's poll — a ten-minute wait for a review you've already decided not to act on is the exact cost being capped. **Still run Phase 7b**: the budget caps *review* requests, never CI handling, and an exhausted run that skips CI would report a red PR as ready. Then Phase 8, by 7c's budget-exhausted path.
-3. Otherwise this request **is** the next round. Record it *before* issuing it, so a crash mid-round can't hand out a free one:
+1. **`VERDICT=clean` and `REVIEWED` = `HEAD_OID`** → the PR already carries a current, clean review. Don't request one: re-requesting would spend a round to re-confirm a result you already have, which the budget exists to prevent as much as it prevents grinding.
+2. **`ROUNDS` ≥ `CAP`** → exhausted. Don't request, and don't let Phase 6 poll — a ten-minute wait for a review you've already decided not to act on is the exact cost being capped. Phase 8 then takes 7c's budget-exhausted path.
+3. Otherwise this request **is** the next round. Record it *before* issuing it, so a crash mid-round can't hand out a free one — and clear the previous round's findings in the same write, since they describe a review of an older HEAD:
 
    ```bash
-   jq --argjson n $((ROUNDS + 1)) '.rounds = $n' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+   jq --argjson n $((ROUNDS + 1)) '.rounds = $n | .severity = "none" | .verdict = "none"' \
+      "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
    ```
+
+   Leaving them would let a round that timed out — spent, but never reviewed — inherit the *previous* round's `blocking` and quietly buy rounds 4 and 5 on the strength of a finding two rounds old. Phase 6 writes them back the moment a review actually lands; until then the state honestly says "this round returned nothing yet".
+
+**Only the request and Phase 6's poll are ever skipped here.** Every one of these three paths still runs **Phase 7b** before Phase 8 — the budget caps *review* requests and nothing else. A check can go red or pending between invocations, and in `--no-merge` mode Phase 8 never evaluates CI at all, so a path that skipped 7b would report a failing PR as ready for review with nothing downstream to catch it.
 
 The first review counts as round 1. Counting re-requests instead would make "3 rounds" mean four reviews and report a clean first review as zero rounds spent.
 
@@ -252,7 +257,7 @@ gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 
 Filter to comments authored by the bot and posted at or after the review's `submittedAt`.
 
-**Record what the round found**, before you start fixing — this is what Phase 5 reads on the next pass and what decides whether the cap is 3 or 5:
+**Record what the round found**, before you start fixing — this is what Phase 5 reads on the next pass and what decides whether the cap is 3 or 5. Record it for **whichever review you accepted**, bot or human: Phase 5 falls back to a human when the bot times out, and a state file that only ever learns about bot reviews would leave `reviewed_oid` empty after a human approval, so Phase 8's coverage check would block a properly reviewed PR forever.
 
 ```bash
 jq --arg oid "$HEAD_OID" --arg sev "$SEVERITY" --arg v "$VERDICT" \
@@ -380,7 +385,7 @@ Merge condition (ALL must hold):
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 7b before calling it red), AND
 - The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads, AND
-- **The review on record covers what is on the branch now** — `reviewed_oid` equals HEAD, or every commit since it is a fixup *this run* made in response to that review (7c's equivalence). Inside a run you know which; a re-invocation does not, so commits after `reviewed_oid` that this run didn't make are unreviewed code and report `blocked`. Without this the exhausted path becomes an auto-merge hole: skip Phases 5 and 6, and an old `APPROVED` with every thread resolved would satisfy every other condition above while HEAD carries a feature nobody reviewed.
+- **The review on record covers what is on the branch now** — `reviewed_oid` equals HEAD, or every commit since it is one this run made and 7c's equivalence covers: a fixup in response to that review, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Those two exceptions are the same list 7c permits to skip Phase 5, and they have to match exactly — a rule that lets a commit through the loop and then blocks it at the merge is a deadlock, not a safeguard. Inside a run you know which commits are which; a re-invocation does not, so commits after `reviewed_oid` that this run didn't make are unreviewed code and report `blocked`. Without this the exhausted path becomes an auto-merge hole: skip Phases 5 and 6, and an old `APPROVED` with every thread resolved would satisfy every other condition above while HEAD carries a feature nobody reviewed.
 
 If the condition holds → merge:
 
