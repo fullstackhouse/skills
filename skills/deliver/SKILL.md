@@ -9,7 +9,7 @@ You are running the **deliver** skill. Goal: take whatever is on the current bra
 
 CI is slow and every avoidable push is a real cost — front-load all checks locally before pushing.
 
-**No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this), everything through Phase 7/7b runs unchanged — checks, confidentiality gate, PR, reviewer, feedback and CI loops, the tracker's move to *in review* — but Phase 8's merge condition is forced false: leave the PR ready for review, skip Phase 8b, and report. The merge decision stays with the human.
+**No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this), everything through Phase 7/7b/7c runs unchanged — checks, confidentiality gate, PR, reviewer, feedback and CI loops, the tracker's move to *in review* — but Phase 8's merge condition is forced false: leave the PR ready for review, skip Phase 8b, and report. The merge decision stays with the human.
 
 **Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 8's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
 
@@ -49,6 +49,8 @@ mkdir -p .context/deliver
 git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 ```
+
+`.context/deliver/round-<PR>.json` lives here too — the loop's state: the round count Phase 7c budgets and Phase 5 spends, plus what the last review found and which commit it read. Don't reset it on a re-invocation; read why in 7c.
 
 Resolve the PR base once, here, and export it — Phases 1, 2b and 4 all read it, and a base re-derived per phase is how a run ends up checking one range and publishing another:
 
@@ -134,12 +136,43 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 
 ### 5. Request reviewer
 
+**Spend a round here — or find you shouldn't.** This is the only place in the skill a review is ever asked for, so it is the only honest place to count one and the only place a cap can prevent anything. Read the loop state Phase 7c maintains:
+
+```bash
+PR=$(cat .context/deliver/pr-number)
+STATE=".context/deliver/round-$PR.json"
+[ -f "$STATE" ] || echo '{"rounds":0,"severity":"none","verdict":"none","reviewed_oid":""}' > "$STATE"
+eval "$(jq -r '@sh "ROUNDS=\(.rounds) SEVERITY=\(.severity) VERDICT=\(.verdict) REVIEWED=\(.reviewed_oid)"' "$STATE")"
+HEAD_OID=$(git rev-parse HEAD)
+if [ "$SEVERITY" = "blocking" ]; then CAP=5; else CAP=3; fi   # 7c: nits never buy round 4
+```
+
+Three answers, in order:
+
+1. **`VERDICT=clean` and `REVIEWED` = `HEAD_OID`** → the PR already carries a current, clean review. Don't request one: re-requesting would spend a round to re-confirm a result you already have, which the budget exists to prevent as much as it prevents grinding.
+2. **`ROUNDS` ≥ `CAP`** → exhausted. Don't request, and don't let Phase 6 poll — a ten-minute wait for a review you've already decided not to act on is the exact cost being capped. Phase 8 then takes 7c's budget-exhausted path.
+3. Otherwise this request **is** the next round. Record it *before* issuing it, so a crash mid-round can't hand out a free one — and clear the previous round's findings in the same write, since they describe a review of an older HEAD:
+
+   ```bash
+   jq --argjson n $((ROUNDS + 1)) '.rounds = $n | .severity = "none" | .verdict = "none"' \
+      "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+   ```
+
+   Leaving them would let a round that timed out — spent, but never reviewed — inherit the *previous* round's `blocking` and quietly buy rounds 4 and 5 on the strength of a finding two rounds old. Phase 6 writes them back the moment a review actually lands; until then the state honestly says "this round returned nothing yet".
+
+**Only the request and Phase 6's poll are ever skipped here.** Every one of these three paths still runs **Phase 7b** before Phase 8 — the budget caps *review* requests and nothing else. A check can go red or pending between invocations, and in `--no-merge` mode Phase 8 never evaluates CI at all, so a path that skipped 7b would report a failing PR as ready for review with nothing downstream to catch it.
+
+The first review counts as round 1. Counting re-requests instead would make "3 rounds" mean four reviews and report a clean first review as zero rounds spent.
+
 Assign both up front — an unset variable interpolates to `""`, which matches no review and fails exactly the silent-empty way this phase exists to prevent:
 
 ```bash
 SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
+export REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
+export AUTHOR=$(gh pr view <N> --json author --jq .author.login)     # excluded everywhere
 ```
+
+`AUTHOR` belongs here, not in the fallback block below that first needed it: Phase 6 reads `env.AUTHOR` to recognise a review by anyone who isn't you, and a variable defined only on the timeout path would be empty on every other path — matching nothing, silently, in the exact shape this phase keeps warning about.
 
 `PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. One value serves both roles because `gh pr edit --add-reviewer` accepts a bot's **login**, not only its alias.
 
@@ -186,7 +219,6 @@ The success signal is a review arriving, not a request being visible — and Pha
 Use `reviewers` from the `## Skill profile` when the repo sets it. Otherwise derive a candidate — and **then actually request them**, which is the step whose absence started this whole phase:
 
 ```bash
-AUTHOR=$(gh pr view <N> --json author --jq .author.login)
 HUMAN=$(gh pr list --state merged --limit 20 --json reviews \
   --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER\")) | group_by(.) | max_by(length)[0] // empty")
 
@@ -219,6 +251,15 @@ A poll loop must also distinguish jq's `null` (no match yet) from an **empty** r
 
 If nothing newer arrives by then, request a human as Phase 5 describes, report `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not — do not wait on one. Either way **a review is required**: never auto-merge without one.
 
+**A human review, once it exists, is accepted the same way — check for one before polling.** A previous run that timed out requested a human and stopped; if this phase only ever matched `REVIEWER`, that human's approval could never satisfy anything, and the skill would re-request the bot forever on a PR a person had already read:
+
+```bash
+gh pr view <N> --json reviews \
+  --jq '[.reviews[] | select(.author.login != env.AUTHOR and .commit.oid == env.HEAD_OID and (.state == "APPROVED" or .state == "COMMENTED"))] | sort_by(.submittedAt) | last'
+```
+
+A hit — from anyone, bot or human — is the round's review: read its inline comments the same way, record it below, and don't spend a round re-requesting. This is what makes "whichever review you accepted" a reachable instruction rather than a dead one.
+
 Also pull inline review comments (most feedback is line comments, not the top-level review body):
 
 ```bash
@@ -226,6 +267,15 @@ gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 ```
 
 Filter to comments authored by the bot and posted at or after the review's `submittedAt`.
+
+**Record what the round found**, before you start fixing — this is what Phase 5 reads on the next pass and what decides whether the cap is 3 or 5. Record it for **whichever review you accepted**, bot or human: Phase 5 falls back to a human when the bot times out, and a state file that only ever learns about bot reviews would leave `reviewed_oid` empty after a human approval, so Phase 8's coverage check would block a properly reviewed PR forever.
+
+```bash
+jq --arg oid "$HEAD_OID" --arg sev "$SEVERITY" --arg v "$VERDICT" \
+   '.reviewed_oid = $oid | .severity = $sev | .verdict = $v' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+```
+
+`VERDICT` is `clean` when nothing actionable came back and `open` otherwise. `SEVERITY` is `blocking` only if this round raised a correctness bug, a security or data-loss risk, a breaking change or a failing test — the classification 7c's 3-vs-5 decision turns on. Judge it now, while you're reading the findings; a later invocation sees only this file and cannot re-derive it. It is per round, not sticky: a round that returns only nits writes `nits` and the cap falls back to 3.
 
 ### 7. Address feedback
 
@@ -238,6 +288,8 @@ Pushing a fix alone is not enough — also respond on the thread. For every acti
 5. For feedback you disagree with: reply explaining why, but don't resolve unilaterally — leave it for the user to settle.
 
 If the reviewer raises issues big enough to need new tests or a substantive redesign, stop and tell the user. Don't quietly expand scope.
+
+Once the fixes are pushed, **don't re-request reflexively.** A push that contains only what this review asked for needs no fresh review to merge (Phase 7c says why) — handle the remaining threads and go to Phase 8. Loop back to Phase 5 only when the push carries something the reviewer has never seen: new functionality, a redesign, a fix that reached well beyond the comment. That loop-back is what spends the next round, and Phase 5 is where the budget is checked.
 
 ### 7b. Handle CI failures
 
@@ -266,7 +318,7 @@ If a check genuinely fails, **fix it and keep going** — don't stop and hand ba
    - **e2e flake** — re-run the failed job once (`gh run rerun <run-id> --failed`). If it fails a second time on the same spec with the same fingerprint, it's not a flake — diagnose properly (a `flake-hunt` skill exists for this; invoke it if the failure looks genuinely race-y). Never paper over with retries/skip/timeout.
    - **Migration / DB** — run the repo's migration check; if a manual migration is missing a snapshot/state update, fix per the repo's docs.
    - **Infra** — fix the config, re-run format + validate locally.
-3. Push the fix. CI restarts; loop back to monitoring.
+3. Push the fix. CI restarts; loop back to monitoring — **and if the fix changed shipped behaviour, re-enter Phase 5 before Phase 8.** Green checks are not a review: a behaviour-changing fix that goes straight from here to the merge decision carries code the reviewer never read, on a `reviewed_oid` for the old HEAD. Within budget that costs a round; out of budget it reports `blocked` (7c). A test-only, snapshot or workflow fix that changes no shipped behaviour keeps the direct path.
 
 Hard stop conditions (escalate to user, don't keep grinding):
 - Same failure recurs after 3 fix attempts on the same job — your hypothesis is wrong; stop and ask.
@@ -275,9 +327,45 @@ Hard stop conditions (escalate to user, don't keep grinding):
 
 Do not merge while any required check is failing or pending. `--admin` bypasses required reviews, not failing CI (see Hard rules).
 
+### 7c. Round budget — when to stop looping
+
+A **round** is one review you ask for and act on — request → review → fix → push. Each costs a review wait, a CI run and a re-read of the diff, and a bot reviewer will always find *something* — so left uncapped this loop doesn't converge, it just gets more expensive. Bound it.
+
+**Budget: 3 rounds.** Extend to at most 5, and only while rounds keep surfacing **blocking** findings — a correctness bug, a security or data-loss risk, a breaking change, a failing test. Style nits, naming, doc wording, "consider extracting this" buy no extra round however many there are. At 5, stop regardless of what the last round said: a reviewer still finding real bugs on round 5 is telling you this change needs a human, not another lap.
+
+**Rounds are counted and capped in Phase 5**, where reviews are actually requested — not at the end of the loop, which is one wasted review wait too late. A round therefore begins when you ask for a review, not when you act on one, and the very first review of the PR is round 1.
+
+The state lives in `.context/deliver/round-<PR>.json`, keyed by PR so a branch reused for a second PR starts clean instead of inheriting a spent budget. It holds four things, and each one answers a question a bare counter cannot:
+
+| Field | Written | Answers |
+|---|---|---|
+| `rounds` | Phase 5, before the request | is the budget spent? |
+| `severity` | Phase 6, from the findings | is the cap 3 or 5? |
+| `verdict` | Phase 6, from the findings | is there anything left to fix? |
+| `reviewed_oid` | Phase 6, the HEAD reviewed | has the reviewer seen what's on the branch now? |
+
+`severity` in particular has to be *written down*: "extend to 5 while blocking findings keep coming" is a judgement made while reading a review, and a later invocation that sees only a number cannot reconstruct it — it would stop at 3 through real blockers, or spend rounds 4 and 5 on nits. Recording it is what makes the cap enforceable rather than advisory.
+
+It outlives the run, so re-invoking `deliver` on the same PR in the same workspace resumes the budget rather than granting a fresh one — the loop's cost belongs to the PR, not to the invocation. Reset it only when the user asks for another pass knowing the last one hit the cap.
+
+`.context/` is gitignored and local, so this is workspace memory, not PR state: a fresh clone, or a different machine, starts at zero and at `reviewed_oid: ""` — which reads as "the reviewer has seen nothing", the safe direction, since Phase 8 then refuses to merge on a review it cannot tie to HEAD. That's the accepted limit of a file-based record; it means the count you report in Phase 9 is what *this* workspace spent, so say so if you know an earlier run happened elsewhere.
+
+Stopping early is the normal outcome, not a shortcut: the first round whose review carries no actionable finding ends the loop. Never re-request just to confirm a clean review.
+
+When the budget runs out:
+
+- Still apply any fix that is trivially safe and self-evidently right (a typo, a null check you agree with) — but **don't loop back to Phase 5** afterwards. The push doesn't start a new round; the gate there would refuse it anyway.
+- Reply on every thread you're leaving open with what you did or why you didn't, and leave those threads unresolved.
+- **Keep handling CI** (Phase 7b) exactly as before. The budget caps review requests; it has nothing to say about a red pipeline, and an exhausted run that skipped CI would report a failing PR as ready for review — in `--no-merge` mode, where Phase 8 never evaluates the merge condition, nothing downstream would catch it.
+- Go to Phase 8 unchanged. Unresolved *actionable* threads still block the merge condition, and so does a HEAD the reviewer never saw (Phase 8's `reviewed_oid` bullet). A budget exhausted with real findings open reports `blocked` — the cap ends the looping, it never lowers the merge bar.
+
+**A fixup push does not invalidate the review that asked for it.** Phase 6's `.commit.oid == HEAD_OID` gate governs which review you may *accept as the review* — not whether every subsequent commit needs its own. Once a round's review has landed against the HEAD it actually read, fixes made **in response to it** don't need a fresh review to merge; that equivalence is what makes the loop terminate at all.
+
+Read "in response to it" strictly, because it is the whole load-bearing width of the exception. New functionality, a redesign, a fix that reached well beyond the comment — and equally **a Phase 7b CI fix that changes behaviour**, which loops back only to CI monitoring and would otherwise reach Phase 8 carrying code no reviewer has seen — are all unseen changes. They go back through Phase 5's gate like any other round: within budget you spend one, out of budget you report `blocked`. A test-only or config-only CI fix that changes no shipped behaviour does not.
+
 ### 8. Auto-merge decision
 
-In no-merge mode this decision is already made: the condition is false by definition — surface the PR's state as ready-for-review and stop (Phase 8b never runs).
+In no-merge mode the *merge* is already decided against — the condition is false by definition, and Phase 8b never runs. **The assessment still happens.** `--no-merge` withholds the merge, not the truth about the PR: evaluate the conditions below anyway and report what they say — `ready-for-review` only when they all hold bar the merge itself, otherwise `awaiting-CI` or `blocked`, naming what blocks. Reporting ready-for-review unconditionally is how an exhausted budget with open findings, or a red pipeline, reaches a human as "done".
 
 If not much has changed since the skill started, just merge. "Not much" means the work since Phase 0's `start-sha` is mostly review-feedback fixups, not new functionality.
 
@@ -307,7 +395,8 @@ Merge condition (ALL must hold):
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 7b before calling it red), AND
-- The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads.
+- The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads, AND
+- **The review on record covers what is on the branch now** — `reviewed_oid` equals HEAD, or every commit since it is one this run made and 7c's equivalence covers: a fixup in response to that review, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Those two exceptions are the same list 7c permits to skip Phase 5, and they have to match exactly — a rule that lets a commit through the loop and then blocks it at the merge is a deadlock, not a safeguard. Inside a run you know which commits are which; a re-invocation does not, so commits after `reviewed_oid` that this run didn't make are unreviewed code and report `blocked`. Without this the exhausted path becomes an auto-merge hole: skip Phases 5 and 6, and an old `APPROVED` with every thread resolved would satisfy every other condition above while HEAD carries a feature nobody reviewed.
 
 If the condition holds → merge:
 
@@ -337,7 +426,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, how many review rounds you spent and whether the Phase 7c budget ran out, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 
@@ -348,4 +437,5 @@ Final message to the user must include: PR URL, the base it targets whenever tha
 5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
-8. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
+8. **Never grind past the Phase 7c round budget.** 3 rounds, 5 if blocking findings keep coming. Past that the answer is a human, not another re-request — and the cap never relaxes Phase 8's merge condition.
+9. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
