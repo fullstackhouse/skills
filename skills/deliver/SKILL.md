@@ -50,7 +50,7 @@ git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 ```
 
-`.context/deliver/rounds` lives here too — the review-round counter Phase 7c spends. Don't reset it on a re-invocation; read why there.
+`.context/deliver/rounds-<PR>` lives here too — the review-round counter Phase 7c budgets and Phase 5 spends. Don't reset it on a re-invocation; read why there.
 
 Resolve the PR base once, here, and export it — Phases 1, 2b and 4 all read it, and a base re-derived per phase is how a run ends up checking one range and publishing another:
 
@@ -135,6 +135,21 @@ Resolve the task from the PR body's task line — the repo's own convention (`Cl
 Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work wider than this PR — leave those alone at every phase.
 
 ### 5. Request reviewer
+
+**Spend a round here — or find the budget already gone.** This is the only place in the skill a review is ever asked for, so it is the only honest place to count one and the only useful place to stop:
+
+```bash
+PR=$(cat .context/deliver/pr-number)
+ROUNDS=$(cat ".context/deliver/rounds-$PR" 2>/dev/null || echo 0)
+```
+
+If `ROUNDS` has reached the Phase 7c cap, **skip Phases 5 and 6 entirely** and go to Phase 8 by 7c's budget-exhausted path. Don't request, don't poll: a ten-minute wait for a review you have already decided not to act on is precisely the cost the budget exists to remove, and an exhausted run that still requests one buys the wait and discards the answer. Otherwise the request below *is* the next round — record it before issuing it, so a crash mid-round can't hand out a free one:
+
+```bash
+echo $((ROUNDS + 1)) > ".context/deliver/rounds-$PR"
+```
+
+The first review counts as round 1. Counting re-requests instead would make "3 rounds" mean four reviews and report a clean first review as zero rounds spent.
 
 Assign both up front — an unset variable interpolates to `""`, which matches no review and fails exactly the silent-empty way this phase exists to prevent:
 
@@ -241,7 +256,7 @@ Pushing a fix alone is not enough — also respond on the thread. For every acti
 
 If the reviewer raises issues big enough to need new tests or a substantive redesign, stop and tell the user. Don't quietly expand scope.
 
-Once the fixes are pushed, re-request and loop back to Phase 6 — but only within the round budget in Phase 7c. Read it before the second re-request.
+Once the fixes are pushed, **don't re-request reflexively.** A push that contains only what this review asked for needs no fresh review to merge (Phase 7c says why) — handle the remaining threads and go to Phase 8. Loop back to Phase 5 only when the push carries something the reviewer has never seen: new functionality, a redesign, a fix that reached well beyond the comment. That loop-back is what spends the next round, and Phase 5 is where the budget is checked.
 
 ### 7b. Handle CI failures
 
@@ -281,23 +296,21 @@ Do not merge while any required check is failing or pending. `--admin` bypasses 
 
 ### 7c. Round budget — when to stop looping
 
-A **round** is one full review → fix → push → re-request cycle. Each costs a review wait, a CI run and a re-read of the diff, and a bot reviewer will always find *something* — so left uncapped this loop doesn't converge, it just gets more expensive. Bound it.
+A **round** is one review you ask for and act on — request → review → fix → push. Each costs a review wait, a CI run and a re-read of the diff, and a bot reviewer will always find *something* — so left uncapped this loop doesn't converge, it just gets more expensive. Bound it.
 
 **Budget: 3 rounds.** Extend to at most 5, and only while rounds keep surfacing **blocking** findings — a correctness bug, a security or data-loss risk, a breaking change, a failing test. Style nits, naming, doc wording, "consider extracting this" buy no extra round however many there are. At 5, stop regardless of what the last round said: a reviewer still finding real bugs on round 5 is telling you this change needs a human, not another lap.
 
-Count rounds alongside the Phase 0 anchor, and increment on each re-request:
+**Rounds are counted and capped in Phase 5**, where reviews are actually requested — not at the end of the loop, which is one wasted review wait too late. A round therefore begins when you ask for a review, not when you act on one, and the very first review of the PR is round 1.
 
-```bash
-echo $(( $(cat .context/deliver/rounds 2>/dev/null || echo 0) + 1 )) > .context/deliver/rounds
-```
+The count lives in `.context/deliver/rounds-<PR>`, keyed by PR number so a branch reused for a second PR starts clean instead of inheriting a spent budget. It outlives the run, so re-invoking `deliver` on the same PR in the same workspace resumes the budget rather than granting a fresh one — the loop's cost belongs to the PR, not to the invocation. Reset it only when the user asks for another pass knowing the last one hit the cap.
 
-The file is per branch and survives the run, so re-invoking `deliver` on the same PR **resumes** the budget rather than granting a fresh one — the loop's cost belongs to the PR, not to the invocation. Reset it only when the user asks for another pass knowing the last one hit the cap.
+`.context/` is gitignored and local, so this is workspace memory, not PR state: a fresh clone, or a different machine, starts the count at zero. That's the accepted limit of a file-based counter and not worth pushing into a label or a PR comment — but it means the count you report in Phase 9 is what *this* workspace spent. Say so if you know an earlier run happened elsewhere.
 
 Stopping early is the normal outcome, not a shortcut: the first round whose review carries no actionable finding ends the loop. Never re-request just to confirm a clean review.
 
 When the budget runs out:
 
-- Still apply any fix that is trivially safe and self-evidently right (a typo, a null check you agree with) — but **don't re-request** afterwards. The round is over; the push doesn't start a new one.
+- Still apply any fix that is trivially safe and self-evidently right (a typo, a null check you agree with) — but **don't loop back to Phase 5** afterwards. The push doesn't start a new round; the gate there would refuse it anyway.
 - Reply on every thread you're leaving open with what you did or why you didn't, and leave those threads unresolved.
 - Go to Phase 8 unchanged. Unresolved *actionable* threads still block the merge condition, so a budget exhausted with real findings open reports `blocked` — the cap ends the looping, it never lowers the merge bar.
 
