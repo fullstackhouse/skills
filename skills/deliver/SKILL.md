@@ -50,6 +50,8 @@ git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 ```
 
+`.context/deliver/rounds` lives here too — the review-round counter Phase 7c spends. Don't reset it on a re-invocation; read why there.
+
 Resolve the PR base once, here, and export it — Phases 1, 2b and 4 all read it, and a base re-derived per phase is how a run ends up checking one range and publishing another:
 
 ```bash
@@ -239,6 +241,8 @@ Pushing a fix alone is not enough — also respond on the thread. For every acti
 
 If the reviewer raises issues big enough to need new tests or a substantive redesign, stop and tell the user. Don't quietly expand scope.
 
+Once the fixes are pushed, re-request and loop back to Phase 6 — but only within the round budget in Phase 7c. Read it before the second re-request.
+
 ### 7b. Handle CI failures
 
 In parallel with waiting for the review, monitor CI:
@@ -274,6 +278,30 @@ Hard stop conditions (escalate to user, don't keep grinding):
 - A test failure points at a real bug in code outside the diff (this branch surfaced it but didn't cause it).
 
 Do not merge while any required check is failing or pending. `--admin` bypasses required reviews, not failing CI (see Hard rules).
+
+### 7c. Round budget — when to stop looping
+
+A **round** is one full review → fix → push → re-request cycle. Each costs a review wait, a CI run and a re-read of the diff, and a bot reviewer will always find *something* — so left uncapped this loop doesn't converge, it just gets more expensive. Bound it.
+
+**Budget: 3 rounds.** Extend to at most 5, and only while rounds keep surfacing **blocking** findings — a correctness bug, a security or data-loss risk, a breaking change, a failing test. Style nits, naming, doc wording, "consider extracting this" buy no extra round however many there are. At 5, stop regardless of what the last round said: a reviewer still finding real bugs on round 5 is telling you this change needs a human, not another lap.
+
+Count rounds alongside the Phase 0 anchor, and increment on each re-request:
+
+```bash
+echo $(( $(cat .context/deliver/rounds 2>/dev/null || echo 0) + 1 )) > .context/deliver/rounds
+```
+
+The file is per branch and survives the run, so re-invoking `deliver` on the same PR **resumes** the budget rather than granting a fresh one — the loop's cost belongs to the PR, not to the invocation. Reset it only when the user asks for another pass knowing the last one hit the cap.
+
+Stopping early is the normal outcome, not a shortcut: the first round whose review carries no actionable finding ends the loop. Never re-request just to confirm a clean review.
+
+When the budget runs out:
+
+- Still apply any fix that is trivially safe and self-evidently right (a typo, a null check you agree with) — but **don't re-request** afterwards. The round is over; the push doesn't start a new one.
+- Reply on every thread you're leaving open with what you did or why you didn't, and leave those threads unresolved.
+- Go to Phase 8 unchanged. Unresolved *actionable* threads still block the merge condition, so a budget exhausted with real findings open reports `blocked` — the cap ends the looping, it never lowers the merge bar.
+
+**A fixup push does not invalidate the review that asked for it.** Phase 6's `.commit.oid == HEAD_OID` gate governs which review you may *accept as the review* — not whether every subsequent commit needs its own. Once a round's review has landed against the HEAD it actually read, fixes made in response to it don't need a fresh review to merge; that equivalence is what makes the loop terminate at all. Re-request when you push something the reviewer has never seen — new functionality, a redesign — not when you push its own suggestion back.
 
 ### 8. Auto-merge decision
 
@@ -337,7 +365,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, how many review rounds you spent and whether the Phase 7c budget ran out, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 
@@ -348,4 +376,5 @@ Final message to the user must include: PR URL, the base it targets whenever tha
 5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
-8. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
+8. **Never grind past the Phase 7c round budget.** 3 rounds, 5 if blocking findings keep coming. Past that the answer is a human, not another re-request — and the cap never relaxes Phase 8's merge condition.
+9. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
