@@ -50,7 +50,7 @@ git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 ```
 
-`.context/deliver/rounds-<PR>` lives here too — the review-round counter Phase 7c budgets and Phase 5 spends. Don't reset it on a re-invocation; read why there.
+`.context/deliver/round-<PR>.json` lives here too — the loop's state: the round count Phase 7c budgets and Phase 5 spends, plus what the last review found and which commit it read. Don't reset it on a re-invocation; read why in 7c.
 
 Resolve the PR base once, here, and export it — Phases 1, 2b and 4 all read it, and a base re-derived per phase is how a run ends up checking one range and publishing another:
 
@@ -136,18 +136,26 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 
 ### 5. Request reviewer
 
-**Spend a round here — or find the budget already gone.** This is the only place in the skill a review is ever asked for, so it is the only honest place to count one and the only useful place to stop:
+**Spend a round here — or find you shouldn't.** This is the only place in the skill a review is ever asked for, so it is the only honest place to count one and the only place a cap can prevent anything. Read the loop state Phase 7c maintains:
 
 ```bash
 PR=$(cat .context/deliver/pr-number)
-ROUNDS=$(cat ".context/deliver/rounds-$PR" 2>/dev/null || echo 0)
+STATE=".context/deliver/round-$PR.json"
+[ -f "$STATE" ] || echo '{"rounds":0,"severity":"none","verdict":"none","reviewed_oid":""}' > "$STATE"
+eval "$(jq -r '@sh "ROUNDS=\(.rounds) SEVERITY=\(.severity) VERDICT=\(.verdict) REVIEWED=\(.reviewed_oid)"' "$STATE")"
+HEAD_OID=$(git rev-parse HEAD)
+if [ "$SEVERITY" = "blocking" ]; then CAP=5; else CAP=3; fi   # 7c: nits never buy round 4
 ```
 
-If `ROUNDS` has reached the Phase 7c cap, **skip Phases 5 and 6 entirely** and go to Phase 8 by 7c's budget-exhausted path. Don't request, don't poll: a ten-minute wait for a review you have already decided not to act on is precisely the cost the budget exists to remove, and an exhausted run that still requests one buys the wait and discards the answer. Otherwise the request below *is* the next round — record it before issuing it, so a crash mid-round can't hand out a free one:
+Three answers, in order:
 
-```bash
-echo $((ROUNDS + 1)) > ".context/deliver/rounds-$PR"
-```
+1. **`VERDICT=clean` and `REVIEWED` = `HEAD_OID`** → the PR already carries a current, clean review. Don't request one. Skip to Phase 8; re-requesting here would spend a round to re-confirm a result you already have, which the budget exists to prevent as much as it prevents grinding.
+2. **`ROUNDS` ≥ `CAP`** → exhausted. Skip the request and Phase 6's poll — a ten-minute wait for a review you've already decided not to act on is the exact cost being capped. **Still run Phase 7b**: the budget caps *review* requests, never CI handling, and an exhausted run that skips CI would report a red PR as ready. Then Phase 8, by 7c's budget-exhausted path.
+3. Otherwise this request **is** the next round. Record it *before* issuing it, so a crash mid-round can't hand out a free one:
+
+   ```bash
+   jq --argjson n $((ROUNDS + 1)) '.rounds = $n' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+   ```
 
 The first review counts as round 1. Counting re-requests instead would make "3 rounds" mean four reviews and report a clean first review as zero rounds spent.
 
@@ -244,6 +252,15 @@ gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 
 Filter to comments authored by the bot and posted at or after the review's `submittedAt`.
 
+**Record what the round found**, before you start fixing — this is what Phase 5 reads on the next pass and what decides whether the cap is 3 or 5:
+
+```bash
+jq --arg oid "$HEAD_OID" --arg sev "$SEVERITY" --arg v "$VERDICT" \
+   '.reviewed_oid = $oid | .severity = $sev | .verdict = $v' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+```
+
+`VERDICT` is `clean` when nothing actionable came back and `open` otherwise. `SEVERITY` is `blocking` only if this round raised a correctness bug, a security or data-loss risk, a breaking change or a failing test — the classification 7c's 3-vs-5 decision turns on. Judge it now, while you're reading the findings; a later invocation sees only this file and cannot re-derive it. It is per round, not sticky: a round that returns only nits writes `nits` and the cap falls back to 3.
+
 ### 7. Address feedback
 
 Pushing a fix alone is not enough — also respond on the thread. For every actionable comment:
@@ -302,9 +319,20 @@ A **round** is one review you ask for and act on — request → review → fix 
 
 **Rounds are counted and capped in Phase 5**, where reviews are actually requested — not at the end of the loop, which is one wasted review wait too late. A round therefore begins when you ask for a review, not when you act on one, and the very first review of the PR is round 1.
 
-The count lives in `.context/deliver/rounds-<PR>`, keyed by PR number so a branch reused for a second PR starts clean instead of inheriting a spent budget. It outlives the run, so re-invoking `deliver` on the same PR in the same workspace resumes the budget rather than granting a fresh one — the loop's cost belongs to the PR, not to the invocation. Reset it only when the user asks for another pass knowing the last one hit the cap.
+The state lives in `.context/deliver/round-<PR>.json`, keyed by PR so a branch reused for a second PR starts clean instead of inheriting a spent budget. It holds four things, and each one answers a question a bare counter cannot:
 
-`.context/` is gitignored and local, so this is workspace memory, not PR state: a fresh clone, or a different machine, starts the count at zero. That's the accepted limit of a file-based counter and not worth pushing into a label or a PR comment — but it means the count you report in Phase 9 is what *this* workspace spent. Say so if you know an earlier run happened elsewhere.
+| Field | Written | Answers |
+|---|---|---|
+| `rounds` | Phase 5, before the request | is the budget spent? |
+| `severity` | Phase 6, from the findings | is the cap 3 or 5? |
+| `verdict` | Phase 6, from the findings | is there anything left to fix? |
+| `reviewed_oid` | Phase 6, the HEAD reviewed | has the reviewer seen what's on the branch now? |
+
+`severity` in particular has to be *written down*: "extend to 5 while blocking findings keep coming" is a judgement made while reading a review, and a later invocation that sees only a number cannot reconstruct it — it would stop at 3 through real blockers, or spend rounds 4 and 5 on nits. Recording it is what makes the cap enforceable rather than advisory.
+
+It outlives the run, so re-invoking `deliver` on the same PR in the same workspace resumes the budget rather than granting a fresh one — the loop's cost belongs to the PR, not to the invocation. Reset it only when the user asks for another pass knowing the last one hit the cap.
+
+`.context/` is gitignored and local, so this is workspace memory, not PR state: a fresh clone, or a different machine, starts at zero and at `reviewed_oid: ""` — which reads as "the reviewer has seen nothing", the safe direction, since Phase 8 then refuses to merge on a review it cannot tie to HEAD. That's the accepted limit of a file-based record; it means the count you report in Phase 9 is what *this* workspace spent, so say so if you know an earlier run happened elsewhere.
 
 Stopping early is the normal outcome, not a shortcut: the first round whose review carries no actionable finding ends the loop. Never re-request just to confirm a clean review.
 
@@ -312,9 +340,12 @@ When the budget runs out:
 
 - Still apply any fix that is trivially safe and self-evidently right (a typo, a null check you agree with) — but **don't loop back to Phase 5** afterwards. The push doesn't start a new round; the gate there would refuse it anyway.
 - Reply on every thread you're leaving open with what you did or why you didn't, and leave those threads unresolved.
-- Go to Phase 8 unchanged. Unresolved *actionable* threads still block the merge condition, so a budget exhausted with real findings open reports `blocked` — the cap ends the looping, it never lowers the merge bar.
+- **Keep handling CI** (Phase 7b) exactly as before. The budget caps review requests; it has nothing to say about a red pipeline, and an exhausted run that skipped CI would report a failing PR as ready for review — in `--no-merge` mode, where Phase 8 never evaluates the merge condition, nothing downstream would catch it.
+- Go to Phase 8 unchanged. Unresolved *actionable* threads still block the merge condition, and so does a HEAD the reviewer never saw (Phase 8's `reviewed_oid` bullet). A budget exhausted with real findings open reports `blocked` — the cap ends the looping, it never lowers the merge bar.
 
-**A fixup push does not invalidate the review that asked for it.** Phase 6's `.commit.oid == HEAD_OID` gate governs which review you may *accept as the review* — not whether every subsequent commit needs its own. Once a round's review has landed against the HEAD it actually read, fixes made in response to it don't need a fresh review to merge; that equivalence is what makes the loop terminate at all. Re-request when you push something the reviewer has never seen — new functionality, a redesign — not when you push its own suggestion back.
+**A fixup push does not invalidate the review that asked for it.** Phase 6's `.commit.oid == HEAD_OID` gate governs which review you may *accept as the review* — not whether every subsequent commit needs its own. Once a round's review has landed against the HEAD it actually read, fixes made **in response to it** don't need a fresh review to merge; that equivalence is what makes the loop terminate at all.
+
+Read "in response to it" strictly, because it is the whole load-bearing width of the exception. New functionality, a redesign, a fix that reached well beyond the comment — and equally **a Phase 7b CI fix that changes behaviour**, which loops back only to CI monitoring and would otherwise reach Phase 8 carrying code no reviewer has seen — are all unseen changes. They go back through Phase 5's gate like any other round: within budget you spend one, out of budget you report `blocked`. A test-only or config-only CI fix that changes no shipped behaviour does not.
 
 ### 8. Auto-merge decision
 
@@ -348,7 +379,8 @@ Merge condition (ALL must hold):
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 7b before calling it red), AND
-- The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads.
+- The review is `APPROVED` or `COMMENTED` with no remaining unresolved actionable threads, AND
+- **The review on record covers what is on the branch now** — `reviewed_oid` equals HEAD, or every commit since it is a fixup *this run* made in response to that review (7c's equivalence). Inside a run you know which; a re-invocation does not, so commits after `reviewed_oid` that this run didn't make are unreviewed code and report `blocked`. Without this the exhausted path becomes an auto-merge hole: skip Phases 5 and 6, and an old `APPROVED` with every thread resolved would satisfy every other condition above while HEAD carries a feature nobody reviewed.
 
 If the condition holds → merge:
 
