@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests) to front-load what CI would catch, open or update a PR, request a reviewer (or re-review if one already exists), address the feedback, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, and --base to target a branch other than the repo default (stacked PRs). CI is slow; do not lean on it as a first pass.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests) and one fresh-context local review to front-load what CI and the reviewer would catch, open or update a PR, request a reviewer (or re-review if one already exists), address the feedback, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, and --base to target a branch other than the repo default (stacked PRs). CI is slow; do not lean on it as a first pass.
 ---
 
 # deliver
@@ -103,6 +103,15 @@ git log "$BASE_REF"..HEAD --format='%B' | grep -inE "$TERMS"
 
 Grep is the floor — also read the prose the branch adds (specs, READMEs, comments). On a hit before pushing: rewrite (amend/rebase is fine, nothing is published yet). On a hit in something already pushed or public: **stop and tell the user** — never force-push to hide it, and never decide alone whether to rewrite published history.
 
+### 2c. Local review round — before anything is pushed
+
+A bot reviewer reads hunks. The findings that cost the most rounds live in what the hunks touch — the consumer of a changed function, the environment a config key lands in, the script whose output another script parses. Read that once, locally, before the first review is requested, so the reviewer sees a hardened diff and the loop starts where round 2 would have.
+
+- The repo carries `.ai/agentic.config.json` and `om-code-review` → run **`om-review-loop --quiet-rounds 1`**: it reviews with fresh-context subagents, verifies before fixing, hands up what it must not decide.
+- Otherwise → one fresh-context reviewer subagent on `git diff "$BASE_REF"...HEAD`, told nothing of the branch's intent: whole files, callers and consumers, and per finding a severity, a concrete failure scenario and a fix. Verify each finding before acting (Phase 7's first step), fix what holds, commit.
+
+Findings outside the diff are handed up in Phase 9, never fixed here. This round spends nothing from the 7c budget — no review was requested — and it replaces nothing downstream: a review is still required (Phase 6).
+
 ### 3. Commit & push
 
 Commit any work made during local checks under the same authorship as the branch's existing commits. Use Conventional Commits.
@@ -172,23 +181,7 @@ export REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested
 export AUTHOR=$(gh pr view <N> --json author --jq .author.login)     # excluded everywhere
 ```
 
-`AUTHOR` belongs here, not in the fallback block below that first needed it: Phase 6 reads `env.AUTHOR` to recognise a review by anyone who isn't you, and a variable defined only on the timeout path would be empty on every other path — matching nothing, silently, in the exact shape this phase keeps warning about.
-
-`PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key, unset when the repo documents none. One value serves both roles because `gh pr edit --add-reviewer` accepts a bot's **login**, not only its alias.
-
-**Set it to the login, never an alias.** `@copilot` is accepted by `gh pr edit` and is what GitHub's own docs show — but reviews are authored by `copilot-pull-request-reviewer`, and `.author.login` never carries a leading `@`. A profile saying `reviewer: @somebot` would request correctly and then match nothing, timing out on a review that had already arrived. If a bot's alias and login differ and you must request by alias, the two roles genuinely need two values — say so in the profile rather than letting one silently half-work.
-
-(Not to be confused with **`reviewers`**, plural, which is the human fallback list below.)
-
-**Why the login and not the alias:** Copilot answers to a different name in each API, and only one of them is what a review is authored by. Measured on `gh` 2.95.0 against a repo where the bot works:
-
-| Name | `gh pr edit --add-reviewer` | REST `POST .../requested_reviewers` | authors reviews as |
-|---|---|---|---|
-| `@copilot` | ✅ lands (documented alias) | — | — |
-| `copilot-pull-request-reviewer` | ✅ lands | ❌ `422 … not a collaborator` | ✅ |
-| `Copilot` | ❌ `Could not resolve user with login` | ✅ | — |
-
-`copilot-pull-request-reviewer` is the only row that both lands a request *and* matches a review, which is why one variable suffices. The REST **reviewers** endpoint is not used at all, so its `Copilot`-only spelling never comes up. (REST is still used later in this phase for review comments and thread replies.)
+`PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key (not `reviewers`, the human fallback list below), unset when the repo documents none. **It must be the login, never an alias**: `copilot-pull-request-reviewer` is the only spelling that both lands a `gh pr edit --add-reviewer` request *and* matches `.author.login` on the review. `@copilot` requests fine and then matches nothing — a poll that outlives a review which landed two minutes in. (`Copilot` works only on the REST reviewers endpoint, which this skill does not use.) A bot whose alias and login genuinely differ needs two profile values; say so rather than let one half-work.
 
 **Record a baseline first.** On a re-request the bot's previous review is already on the PR, so without this Phase 6's first poll returns instantly with the *old* review and Phase 7 addresses feedback written against an earlier HEAD:
 
@@ -200,9 +193,7 @@ export PRIOR=$(gh pr view <N> --json reviews \
 
 "A review exists" and "a review of this HEAD exists" are different questions, and only the second one may gate a merge.
 
-**Read the login from `env`, in a single-quoted filter — never interpolate the shell variable into the `--jq` string.** A jq filter carrying `\"$REVIEWER\"` has to survive two levels of quoting, and it is re-quoted every time the query is pasted into a loop, a `watch`, or a background job. Get it wrong and the filter matches nothing, forever, in silence — indistinguishable from a bot that never reviewed, which is how a poll ends up outliving a review that landed two minutes in. `env.REVIEWER` needs no escaping and cannot be re-broken downstream.
-
-**Keep the `// ""`, and never drop it as redundant.** Everything jq reads from `env` is a *string*, so the empty-array case has to be normalised before it leaves this command: without the default, jq prints the missing timestamp as the literal `null`, `PRIOR` becomes the four-character string `"null"`, and Phase 6 compares timestamps against it lexicographically — where `"2026-…" > "null"` is **false**, because `2` sorts below `n`. The first review on a fresh PR would then never match, silently, which is the failure this whole pattern exists to remove. `""` sorts below every timestamp and is the only value that behaves.
+Two details in that filter are load-bearing. `env.REVIEWER` inside a single-quoted filter: an interpolated `\"$REVIEWER\"` breaks on the re-quoting a loop or background watcher applies, and then matches nothing, silently. And the `// ""`: without it an empty array prints the literal `null`, and `"2026-…" > "null"` is false, so the first review on a fresh PR never matches.
 
 **Request, or re-request, with the same command.** `gh pr edit --add-reviewer` both adds a reviewer and re-requests one who has already reviewed, and a re-request is what triggers a fresh review against the new HEAD:
 
@@ -229,9 +220,7 @@ else
 fi
 ```
 
-`// empty` rather than a bare `max_by(length)[0]`: on an empty candidate list that expression returns `null` and exits 0, so an unguarded run would request a reviewer literally named `null`. A young repo with no merged PRs, or one whose only reviewers so far are the author and the bot, hits this — and the failure would be silent, in the same shape as the bug this phase exists to prevent.
-
-Excluding the author is not cosmetic either: whoever runs this skill is usually the PR's author, and requesting the author returns `422 Review cannot be requested from pull request author`. Never treat "no bot review" as "no review needed".
+`// empty` guards the empty candidate list — a bare `max_by(length)[0]` prints `null`, exits 0, and the run requests a reviewer literally named `null`. Excluding the author is required too: requesting the PR author returns `422`. Never treat "no bot review" as "no review needed".
 
 ### 6. Wait for the review
 
@@ -243,7 +232,7 @@ gh pr view <N> --json reviews \
   --jq '[.reviews[] | select(.author.login == env.REVIEWER and .submittedAt > env.PRIOR and .commit.oid == env.HEAD_OID)] | sort_by(.submittedAt) | last'
 ```
 
-Poll every ~60s for up to ~10 minutes. All three values come from `env` — `REVIEWER` and `PRIOR` exported in Phase 5, `HEAD_OID` just above — so the filter stays single-quoted: this query gets copied into a loop or a background watcher, which is exactly where an interpolated, escaped filter breaks and then fails silently.
+Poll every ~60s for up to ~10 minutes — same single-quoted `env.` filter, for Phase 5's reason.
 
 **`submittedAt` alone does not answer "reviewed at this HEAD".** A review requested before a push lands *after* it — newer than `$PRIOR`, and still written against superseded code. Each review carries the commit it read (`.commit.oid`), so gate on that; a "no new comments" verdict on the commit your fix replaced says nothing about the fix. Read such a review anyway — its findings may well still apply — but don't let it satisfy the gate, and re-request against the new HEAD.
 
@@ -268,6 +257,12 @@ gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 
 Filter to comments authored by the bot and posted at or after the review's `submittedAt`.
 
+**A round's findings are its inline comments plus the "Suppressed comments" the review body folds into `<details>` — read both.** A body saying "Comments generated: 0" routinely sits above three to five suppressed findings; a loop that reads only inline comments calls such a round clean and merges over them.
+
+**The verdict header is not a finding.** Copilot opens every review with 🟢 *Approval recommended* / 🟡 *Changes recommended* / 🔵 *Needs a closer look*. The yellow one counts *unresolved* threads, so a PR whose fixes are pushed but whose threads are still open stays 🟡 forever; the blue one on a broad change means "a human should read this" and no code fix turns it green. Judge the round by its findings alone: no actionable finding is `clean` whatever the colour. On 🔵, record the round, request the human from Phase 5's fallback, and don't spend a round asking the bot again.
+
+**A quota refusal is not a review.** "Copilot was unable to review this pull request because the user … has reached their quota" arrives *as a review*, within seconds of the request. Match it in the poll (`.body | test("unable to review")`), stop polling at once, and take the no-bot path — request a human, report `awaiting-review`. Waiting the full ten minutes on it is the one cost the poll can avoid outright.
+
 **Record what the round found**, before you start fixing — this is what Phase 5 reads on the next pass and what decides whether the cap is 3 or 5. Record it for **whichever review you accepted**, bot or human: Phase 5 falls back to a human when the bot times out, and a state file that only ever learns about bot reviews would leave `reviewed_oid` empty after a human approval, so Phase 8's coverage check would block a properly reviewed PR forever.
 
 ```bash
@@ -279,17 +274,28 @@ jq --arg oid "$HEAD_OID" --arg sev "$SEVERITY" --arg v "$VERDICT" \
 
 ### 7. Address feedback
 
-Pushing a fix alone is not enough — also respond on the thread. For every actionable comment:
+Pushing a fix alone is not enough — also respond on the thread. For every finding, inline or suppressed:
 
-1. Implement the fix locally.
-2. Re-run the relevant local checks from Phase 2 for the files you touched (don't skip — CI re-running is slower than a 30s local lint).
-3. Commit and push.
-4. Reply to the comment thread explaining what changed (`gh api -X POST "repos/$SLUG/pulls/<N>/comments/<comment-id>/replies" -f body=...`) AND resolve the thread via the GraphQL `resolveReviewThread` mutation. Both — reply without resolve leaves a noisy unresolved thread; resolve without reply leaves the reviewer guessing.
-5. For feedback you disagree with: reply explaining why, but don't resolve unilaterally — leave it for the user to settle.
+1. **Verify it before touching code.** Read what the comment points at and confirm the failure scenario holds. A bot finding can be flatly wrong — a glob that cannot match what it claims, a branch that is never taken — and a fix on a wrong premise is a new defect. A *refuted* finding is a disposition: reply with the reason and resolve the thread. A finding you *disagree* with on judgement (design, scope, taste) gets the reply and stays open for the user to settle.
+2. Implement the fix locally.
+3. Re-run the relevant local checks from Phase 2 for the files you touched (don't skip — CI re-running is slower than a 30s local lint).
+4. Commit and push.
+5. Reply to the comment thread explaining what changed (`gh api -X POST "repos/$SLUG/pulls/<N>/comments/<comment-id>/replies" -f body=...`) AND resolve the thread via the GraphQL `resolveReviewThread` mutation. Both — reply without resolve leaves a noisy unresolved thread; resolve without reply leaves the reviewer guessing. **Resolve before any re-request**: the bot's verdict counts unresolved threads, so a fixed-but-open thread buys another 🟡 and another lap.
 
-If the reviewer raises issues big enough to need new tests or a substantive redesign, stop and tell the user. Don't quietly expand scope.
+A finding that comes back on the same line in a later round is a thread you didn't close, not a new finding: fix it or refute it on the thread now. One PR carried the same unanswered comment through seven rounds.
 
-Once the fixes are pushed, **don't re-request reflexively.** A push that contains only what this review asked for needs no fresh review to merge (Phase 7c says why) — handle the remaining threads and go to Phase 8. Loop back to Phase 5 only when the push carries something the reviewer has never seen: new functionality, a redesign, a fix that reached well beyond the comment. That loop-back is what spends the next round, and Phase 5 is where the budget is checked.
+If the reviewer asks for something bigger than a fix — new tests, a harness, a redesign — stop and tell the user. Don't quietly expand scope.
+
+Once the fixes are pushed, **don't re-request reflexively.** A push that contains only what this review asked for needs no fresh review to merge (Phase 7c says why) — handle the remaining threads and go to Phase 8. Loop back to Phase 5 only when the push carries something the reviewer has never seen. **Measure that; don't judge it** — the prose rule alone has not held:
+
+```bash
+REVIEWED=$(jq -r .reviewed_oid "$STATE")
+git diff --shortstat "$BASE_REF"..."$REVIEWED"                 # what the reviewer read
+git diff --shortstat "$REVIEWED"..HEAD                         # what you added since
+git diff --name-status "$REVIEWED"..HEAD | grep -c '^A'        # new files
+```
+
+New files, or growth beyond a quarter of what was reviewed, is not a fixup. It is scope the review provoked — a harness built to answer "verification gaps", a redesign to answer a nit — and re-requesting on it starts a loop that reviews the growth: one PR went +444 → +1,979 lines between rounds 1 and 2 and spent rounds 3–5 on the addition. Stop and ask. Below that line, the loop-back spends the next round, and Phase 5 is where the budget is checked.
 
 ### 7b. Handle CI failures
 
@@ -426,7 +432,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 9. Report
 
-Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), whether the reviewer bot was actually reachable, how many review rounds you spent and whether the Phase 7c budget ran out, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
+Final message to the user must include: PR URL, the base it targets whenever that isn't the default branch (name the parent PR it stacks on), merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked), what the Phase 2c local round fixed and what it handed up (anything outside the diff, in particular), whether the reviewer bot was actually reachable, how many review rounds you spent and whether the Phase 7c budget ran out, the tracker task and the state you left it in (or why you didn't move it), and any decisions you punted (e.g. "left thread #X unresolved because the suggestion conflicts with the documented convention — please weigh in").
 
 ## Hard rules
 
@@ -434,8 +440,9 @@ Final message to the user must include: PR URL, the base it targets whenever tha
 2. **Never push to the default branch.** This skill operates on a feature branch only.
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. A pre-push gate that takes >2 min defeats the point of front-loading.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
-5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it.
+5. **Don't expand scope under cover of review feedback.** If a suggestion is a refactor beyond the PR's purpose, push back in the thread instead of doing it. Phase 7's growth measure decides what counts, not your sense of it.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
 8. **Never grind past the Phase 7c round budget.** 3 rounds, 5 if blocking findings keep coming. Past that the answer is a human, not another re-request — and the cap never relaxes Phase 8's merge condition.
 9. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
+10. **A verdict header is not a finding; a suppressed comment is.** Read the folded findings, ignore the colour, verify before fixing, and never re-request the bot to turn 🔵 into 🟢.
