@@ -13,7 +13,7 @@ Every other skill here is single-unit: `kickoff` turns one input into one PR. Th
 
 ## Project specifics — read these first
 
-Repo-agnostic, like the rest of the collection. From the consuming repo's `CLAUDE.md` / `AGENTS.md` (the `## Skill profile` section is the curated source):
+Repo-agnostic, like the rest of the collection. From the consuming repo's `AGENTS.md` / `CLAUDE.md` (the `## Skill profile` section is the curated source):
 
 - **Specs** — where specs live and what a finished one looks like. This is how items are found when the input names a directory, and where the Phase 3 answers are written back.
 - **Tracker** — when items are tickets. `deliver` moves their statuses; this skill only reads them to build the list.

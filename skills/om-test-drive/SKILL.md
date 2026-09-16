@@ -17,7 +17,7 @@ A URL handed over without a completed login round-trip is a **failure of this sk
 
 This skill is repo-agnostic, with Open Mercato as its known case. Gather the concrete details from the repository you're running in:
 
-- **How to boot a throwaway instance** — the command that stands up a disposable app + database, where it records its base URL, and which credentials it guarantees. Open Mercato is resolved in Phase 2; for anything else, derive from the repo's `CLAUDE.md` / `AGENTS.md` / `package.json` scripts, or its **`## Skill profile`** section (the curated source) under the **Throwaway instance** knob.
+- **How to boot a throwaway instance** — the command that stands up a disposable app + database, where it records its base URL, and which credentials it guarantees. Open Mercato is resolved in Phase 2; for anything else, derive from the repo's `AGENTS.md` / `CLAUDE.md` / `package.json` scripts, or its **`## Skill profile`** section (the curated source) under the **Throwaway instance** knob.
 - **How to authenticate against it** — the login route, its method and payload shape, and whether it returns a bearer token or sets a session cookie. Phases 3 and 5 are written around Open Mercato's `POST /api/auth/login` → `{token}`; **a repo that authenticates differently will boot and then fail every later phase**, so if its profile doesn't document the auth contract, stop and ask rather than guessing at a login route.
 - **How a changed file maps to a URL** — the route directory convention or a generated route manifest. The click route is *derived* from the diff, so you need this before Phase 4.
 - **How records get created through the real path** — the API route convention per module, or the UI form that owns each entity. You need this before Phase 5.
@@ -111,7 +111,7 @@ Pass them in the environment; **do not edit the repo's `.env`** — it's the use
 1. Root `package.json` has `test:integration:ephemeral:start` → `yarn test:integration:ephemeral:start`. **Both** the monorepo and a current `create-mercato-app` scaffold define this, so the script's presence tells you nothing about which one you're in — see the layout check below before bootstrapping.
 2. `yarn mercato test:ephemeral` (equivalently `yarn mercato test ephemeral`).
 3. An older scaffold laid out under `apps/mercato` with no root script — probe first, then use it: `yarn --cwd apps/mercato exec mercato --help`, then `yarn --cwd apps/mercato exec mercato test:ephemeral`.
-4. The repo's own documented boot (`## Skill profile` → **Throwaway instance**, or `CLAUDE.md` / `AGENTS.md`). If that resolves to a **long-lived shared dev stack** rather than a disposable one, say so and drop to `--no-seed` for the rest of the run — do not ask for permission to write into it (Hard rule 3).
+4. The repo's own documented boot (`## Skill profile` → **Throwaway instance**, or `AGENTS.md` / `CLAUDE.md`). If that resolves to a **long-lived shared dev stack** rather than a disposable one, say so and drop to `--no-seed` for the rest of the run — do not ask for permission to write into it (Hard rule 3).
 
 Useful flags: `--verbose` (full bootstrap/build logs — worth a re-run once the tree is bootstrapped and a boot still fails silently), `--no-reuse-env` (always a brand-new instance on an isolated port), `--no-screenshots` (irrelevant here; this skill doesn't drive a browser).
 

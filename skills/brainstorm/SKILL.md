@@ -13,7 +13,7 @@ Do not edit repository files, write code, file tickets, or start implementing du
 
 ## Project specifics — read these first
 
-This skill is repo-agnostic. Gather from the consuming repo's `CLAUDE.md` / `AGENTS.md` (the `## Skill profile` section is the curated source):
+This skill is repo-agnostic. Gather from the consuming repo's `AGENTS.md` / `CLAUDE.md` (the `## Skill profile` section is the curated source):
 
 - **Tracker** — where tickets live (Notion DB / Linear project / GitHub issues) plus default status/priority/tags. Used read-only for the Phase 3 reality check, and for the one ticket the park ramp files after confirmation.
 - **Specs** — where feature specs and design docs live. Briefs go in a `briefs/` folder beside them; without the knob or a discoverable spec directory, fall back to `.context/briefs/` when `.context/` exists, else ask where to put it.

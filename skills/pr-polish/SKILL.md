@@ -20,7 +20,7 @@ This skill touches **only PR metadata**. Hard rules: never edit code, commit, pu
 - The full discussion: review threads (`gh api repos/<slug>/pulls/<N>/comments --paginate`) *and* conversation comments (`gh api repos/<slug>/issues/<N>/comments --paginate`) — review-driven changes and decisions recorded in comments are part of the story.
 - CI results (`gh pr checks <N>`) — the Verification section may only claim what CI runs, commit messages, or these checks attest to.
 - **Every PR/issue the body references**: check its *current* state. "Waits on #252" is wrong the day #252 merges; a "still to come" item may already be an open stacked PR.
-- Repo conventions: `CLAUDE.md` / `AGENTS.md` sections on PR bodies and task linking (e.g. bare autolinked task IDs, `Closes`/`Part of` semantics). Follow them over this skill's defaults.
+- Repo conventions: `AGENTS.md` / `CLAUDE.md` sections on PR bodies and task linking (e.g. bare autolinked task IDs, `Closes`/`Part of` semantics). Follow them over this skill's defaults.
 
 ## 3. Verify before you write
 

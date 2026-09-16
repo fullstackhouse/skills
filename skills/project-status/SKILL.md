@@ -11,7 +11,7 @@ The draft is the deliverable. **Never post to the channel yourself** unless the 
 
 ## Project specifics — read these first
 
-This skill is repo-agnostic. Gather from the consuming repo's `CLAUDE.md` / `AGENTS.md` (a **`## Skill profile`** section is the curated source):
+This skill is repo-agnostic. Gather from the consuming repo's `AGENTS.md` / `CLAUDE.md` (a **`## Skill profile`** section is the curated source):
 
 - **Status channel** — Slack channel where statuses are posted (name or ID).
 - **Tracker** — Linear team/project ID(s), and/or Notion database/page for tasks.

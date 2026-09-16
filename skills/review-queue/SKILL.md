@@ -28,7 +28,7 @@ Review bucket A (plus any PR the user named, drafts included then). Report B/C/D
 
 ## 3. Gather shared context once (not per agent)
 
-- The consuming repo's `CLAUDE.md` / `AGENTS.md`: PR-body conventions (task-id format, `Closes`/`Part of` semantics), doc doctrine, test strategy, review-relevant "Don'ts".
+- The consuming repo's `AGENTS.md` / `CLAUDE.md`: PR-body conventions (task-id format, `Closes`/`Part of` semantics), doc doctrine, test strategy, review-relevant "Don'ts".
 - The `## Skill profile` section, if present: standing review landmines (perf-sensitive paths, known CI false-fails, encryption/tenancy rules), reviewer-bot login, tracker URL format for ticket links.
 - The spec/ADR directory, if the repo has one, so agents can be pointed at cited specs by exact filename.
 

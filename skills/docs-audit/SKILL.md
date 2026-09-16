@@ -60,7 +60,7 @@ Rank by what it costs: **rules that never arrive** > **instructions that mislead
 
 Apply these directly — they have one correct answer and a reviewable diff:
 
-- **The pointer.** Replace a forked or inverted `CLAUDE.md` with the two-line pointer; where only `CLAUDE.md` exists, `git mv` it to `AGENTS.md` and leave the pointer behind. Content unchanged, so the diff is pure wiring.
+- **The pointer.** Replace a forked or inverted `CLAUDE.md` with the one-line pointer; where only `CLAUDE.md` exists, `git mv` it to `AGENTS.md` and leave the pointer behind. Content unchanged, so the diff is pure wiring.
 - **Dead links** — repoint to the moved file, or remove the link if its target is gone.
 - **Index rows** for orphans that should be reachable; a one-clause description each, saying what the doc is good for.
 - **Spec scaffolding** — the template and the index `README.md` when missing, from the rubric's section list. Backfill the index table from the specs already there.
