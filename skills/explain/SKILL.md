@@ -29,7 +29,7 @@ A diff shows *what* changed, not *why* it matters. Before writing, pull the surr
 
 - **The originating ticket**, if referenced (a ticket id or tracker link — Notion/Linear/Jira/GitHub issue — in the branch name, commit message, or PR body). Fetch it — it usually states the bug/feature in user terms, which is exactly the framing you want.
 - **The code around each hunk** — read the function being changed and its callers, enough to know what the change actually affects at runtime. Don't guess at behavior from added/removed lines.
-- **The domain.** Read the project's own docs for unfamiliar concepts — its `CLAUDE.md` / `AGENTS.md`, the README of the touched module/package, or domain docs the repo points to. A change only makes sense once you understand the concept it operates on. Use a subagent for this if the surface is broad — you want the conclusion, not a file dump.
+- **The domain.** Read the project's own docs for unfamiliar concepts — its `AGENTS.md` / `CLAUDE.md`, the README of the touched module/package, or domain docs the repo points to. A change only makes sense once you understand the concept it operates on. Use a subagent for this if the surface is broad — you want the conclusion, not a file dump.
 - **Tests in the diff** — they encode the author's intended contract and tell you what's covered.
 
 If the change is large or spans several independent concerns, fan out: one subagent per concern to summarize it, then synthesize. Keep your own context clean.

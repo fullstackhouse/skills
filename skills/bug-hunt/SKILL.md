@@ -13,10 +13,10 @@ A green test achieved against a synthetic flow that doesn't exercise the real co
 
 This skill is repo-agnostic. Gather the concrete details from the repository you're running in:
 
-- **How to run the app / reproduce** — the dev/test server command, and any worktree/port convention. Derive from the repo's `CLAUDE.md` / `AGENTS.md`.
-- **Test commands** — how to run a single test for each touched layer/package (`CLAUDE.md` / `package.json` scripts).
+- **How to run the app / reproduce** — the dev/test server command, and any worktree/port convention. Derive from the repo's `AGENTS.md` / `CLAUDE.md`.
+- **Test commands** — how to run a single test for each touched layer/package (`AGENTS.md` / `package.json` scripts).
 - **Existing safety infrastructure** — middleware, decorators, request-context wrappers, transaction boundaries, auth guards the framework already provides. The repo's docs describe these; you need them for the "check existing infra before adding new prevention" rule.
-- **Give-up tracker** — where to file an investigation task (the `## Skill profile` in the repo's root `CLAUDE.md`: a tracker database/project id + default status/priority/tags). If none is configured, ask the user where to file it.
+- **Give-up tracker** — where to file an investigation task (the `## Skill profile` in the repo's root `AGENTS.md`: a tracker database/project id + default status/priority/tags). If none is configured, ask the user where to file it.
 
 ## Arguments
 

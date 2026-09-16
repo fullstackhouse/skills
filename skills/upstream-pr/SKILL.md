@@ -15,7 +15,7 @@ This skill is repo-agnostic. It carries no label taxonomy, no QA rules, no check
 
 - **Agent config** — a machine-readable policy file if the repo has one (e.g. `.ai/agentic.config.json`): `baseBranch`, `labels.*`, `qaGate`, `validation.commands`.
 - **PR policy docs** — the repo's `CONTRIBUTING.md`, PR template, and any `.ai/docs/pr-workflow.md`-style document: label taxonomy, priority/risk inference, QA gate, and **restricted paths** (trees that are off-limits to outside contributions).
-- **`## Skill profile`** in the root `CLAUDE.md` / `AGENTS.md` — the curated source when present. Knobs this skill reads: `forkRemote`, `baseBranch`.
+- **`## Skill profile`** in the root `AGENTS.md` / `CLAUDE.md` — the curated source when present. Knobs this skill reads: `forkRemote`, `baseBranch`.
 - **Check commands** — only needed if Phase 3 fires; same source as the sibling `deliver` skill.
 
 If a needed value isn't documented and can't be inferred, ask rather than guess.
@@ -231,7 +231,7 @@ When several remotes point at the same upstream slug (common: both `origin` and 
 
 0. `git config --get "branch.$BRANCH.gh-merge-base"`
 1. The repo's agent config `baseBranch` (ignore a literal `"auto"`)
-2. `## Skill profile` → `baseBranch` in the root `CLAUDE.md` / `AGENTS.md`
+2. `## Skill profile` → `baseBranch` in the root `AGENTS.md` / `CLAUDE.md`
 3. The PR template's or CONTRIBUTING's wording ("Open PRs against `develop`")
 4. The base used by this fork owner's other open upstream PRs
 5. `gh repo view "$UPSTREAM_SLUG" --json defaultBranchRef -q .defaultBranchRef.name`

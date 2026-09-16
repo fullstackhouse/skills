@@ -11,7 +11,7 @@ This is `deliver`'s front half's missing counterpart: `deliver` ships a branch t
 
 ## Project specifics — read these first
 
-This skill is repo-agnostic. Gather from the consuming repo's `CLAUDE.md` / `AGENTS.md` (the `## Skill profile` section is the curated source):
+This skill is repo-agnostic. Gather from the consuming repo's `AGENTS.md` / `CLAUDE.md` (the `## Skill profile` section is the curated source):
 
 - **Specs** — where feature specs live (repo directory + naming pattern, or a tracker/Notion location) and how deep they're expected to go. No knob → look for a discoverable convention (`docs/specs/`, `specs/`, `rfcs/`, `design/`); none → the plan embeds in the tracker ticket (when a Tracker is configured) or the PR description. Writing it into the ticket is **this skill's own write** in Phase 2 — `deliver` moves ticket statuses, never bodies.
 - **Tracker** — used to link the ticket that spawned this work; status moves are `deliver`'s job, not yours.

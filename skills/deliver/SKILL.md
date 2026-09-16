@@ -17,7 +17,7 @@ CI is slow and every avoidable push is a real cost — front-load all checks loc
 
 This skill is repo-agnostic. The concrete commands, reviewer, and merge policy come from the repository you're running in. Before Phase 1, gather:
 
-- **Check commands per package** — how to lint / typecheck / test / run codegen for each workspace. Derive from the repo's `CLAUDE.md` / `AGENTS.md`, per-package docs, and `package.json` (`scripts`) / `Makefile` / `justfile`. If the repo has a **`## Skill profile`** section in its root `CLAUDE.md`, use that — it's the curated source.
+- **Check commands per package** — how to lint / typecheck / test / run codegen for each workspace. Derive from the repo's `AGENTS.md` / `CLAUDE.md`, per-package docs, and `package.json` (`scripts`) / `Makefile` / `justfile`. If the repo has a **`## Skill profile`** section in its root `AGENTS.md`, use that — it's the curated source.
 - **Repo identity** — one call covers slug, default branch, and the audience the Phase 2b gate keys on:
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner
@@ -25,7 +25,7 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
 - **PR base** — where this PR is meant to land. **The GitHub default branch is the last resort, not the first**: plenty of repos merge into `develop`, `next`, or a release line while `defaultBranchRef` still says `main`. First hit wins:
   1. the **`--base`** argument,
   2. the repo's agent config `baseBranch` (e.g. `.ai/agentic.config.json`),
-  3. the `## Skill profile` key **`baseBranch`** in the root `CLAUDE.md` / `AGENTS.md`,
+  3. the `## Skill profile` key **`baseBranch`** in the root `AGENTS.md` / `CLAUDE.md`,
   4. what the PR template or CONTRIBUTING says ("Open PRs against `develop`"),
   5. the default branch from the `gh repo view` above.
 
