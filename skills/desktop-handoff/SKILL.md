@@ -9,22 +9,27 @@ You are running the **desktop-handoff** skill. Goal: get one GUI-only step done 
 
 The brief always goes out as a file — `TASK.md` in a temp dir — because it is long and quoting it into a shell command is a hazard.
 
+**That makes one precondition load-bearing: the hand must be able to read that path.** Same machine, or a filesystem both sides genuinely share (a mount, a synced directory). It is *not* satisfied by "the user has a second computer" — `$TMPDIR` on this machine means nothing on that one, and both `TASK.md` and the `RESULT.md` return path fail the same way. For a hand with no shared filesystem, don't fake it with a file: paste the brief into that session's prompt directly and have the result come back by relay (step 2's second row), or transfer the directory yourself first. Say which you're doing when you print the command.
+
 **How the result comes back is a choice you make per handoff** (step 2). The floor is another file, `RESULT.md`: no IPC, no tmux, no MCP, so any agent that reads and writes files can be the hand, on any OS. Anything cleverer has to earn it, and sometimes nothing at all is right.
 
 **The user starts the other session by hand.** That is the approval gate: nothing happens until a person pastes a command. Never spawn it yourself.
 
-**If Claude Desktop is on this machine and the step is browser work, prefer `claude-desktop-handoff`.** It spends two things this skill cannot assume: a shared filesystem, which makes `ASK.md`/`REPLY.md` a real back-channel so a wrong assumption is resolved without a round trip through the user, and Desktop driving the user's already-logged-in Chrome. Come back here when the hand might be a different machine, a different runtime, or not Claude at all.
+**If Claude Desktop is on this machine and the step is browser work, prefer `claude-desktop-handoff`.** It spends two things this skill cannot assume: a shared filesystem, which makes `ASK.md`/`REPLY.md` a real back-channel so a wrong assumption is resolved without a round trip through the user, and Desktop driving the user's already-logged-in Chrome. Come back here when the hand might be a different runtime, a different OS, or not Claude at all.
 
 **The decision to hand off is already made.** Whoever invoked this skill — the user, or you, after finding no API, CLI, or browser tool that reaches the target — settled it. Don't re-open it, don't propose alternatives, don't ask whether it's really necessary. Start at step 1.
 
 ## 1. Create the handoff directory
 
 ```bash
-HANDOFF="${TMPDIR:-/tmp}/desktop-handoff/$(date +%Y%m%d-%H%M%S)-<slug>"
-mkdir -p "$HANDOFF"
+PARENT="${TMPDIR:-/tmp}/desktop-handoff"
+mkdir -p "$PARENT" && chmod 700 "$PARENT"
+HANDOFF="$(mktemp -d "$PARENT/$(date +%Y%m%d-%H%M%S)-<slug>-XXXXXX")"
 ```
 
 Use a short kebab-case `<slug>` naming the task. Keep the absolute path — every later step needs it.
+
+`mktemp -d`, not a bare `mkdir -p`, and the `chmod 700` above it. The brief routinely names internal URLs and account handles, and on a box where `$TMPDIR` is unset it lands in `/tmp`: under the usual `022` umask `mkdir -p` creates it `drwxr-xr-x`, readable by every local user, at a path anyone could have guessed and pre-created. `mktemp -d` gives `drwx------` and random suffix in one atomic step. macOS hides this — its per-user `$TMPDIR` is already `0700` — which is exactly why a skill that claims any OS must not rely on it.
 
 ## 2. Choose the return channel
 
@@ -57,10 +62,12 @@ Write the brief so a *fresh* session with no memory of this conversation can exe
 
 ## Guardrails
 - Do not edit files in any repository. Another session owns those.
+- **Stop before any action that creates or reveals a secret** — generating a
+  token, clicking "reveal", rotating a key. Do the structural work up to that
+  point, leave the page open, and report that you stopped there.
+  <Name where the secret must go once a human produces it — a password
+  manager, `gcloud secrets versions add`, an env file.>
 - Do not put secrets (tokens, client secrets, passwords) in your report.
-  <If a secret is produced, name where it must go instead — a password
-  manager, `gcloud secrets versions add`, an env file — and have the user
-  move it by hand.>
 - If the page does not match this description, stop and report what you saw.
 
 ## When done
@@ -95,7 +102,7 @@ Say in one line how you expect the result back, so the user can say otherwise.
 Then add only the setup notes that apply:
 
 - **Native GUI or screen control usually needs an explicit opt-in plus OS permission grants**, and is often the most restricted thing the runtime offers — check that runtime's own docs for what it's limited to before promising it works. For Claude Code specifically: `/mcp` → enable `computer-use`, then grant macOS Accessibility + Screen Recording when prompted; it is **macOS only**, needs a Pro or Max plan, and the enablement **persists per project path**, so a git worktree or a different directory needs enabling again even if the user has done it before.
-- **Browser-only work** typically needs none of that — a GUI-capable session with a browser tool, or the user's own logged-in browser, is enough.
+- **Browser-only work** typically needs none of that — a GUI-capable session with a browser tool, or the user's own logged-in browser, is enough. **Don't reach for computer-use to fill a web form:** it grants browsers a read-only tier that cannot type into one, so a form-filling handoff routed that way dead-ends after the setup cost. Require a browser tool that can actually interact, or the user's own browser.
 - The user must **stay at that terminal**: approval prompts appear there and only they can answer them.
 
 ## 5. Wait — only if you chose `RESULT.md`
@@ -131,6 +138,6 @@ However it arrived — file, relayed by the user, over a runtime channel, or jus
 
 - **The user starts the session.** Never spawn one to dodge a prompt you'd otherwise have to ask for.
 - **Never use the other session to do something your own permissions blocked.** A capability gap (this session has no GUI) is a fair reason to hand off. A denied permission is not — take that back to the user.
-- **Secrets don't travel through transcripts.** A GUI session screenshots or reads the page to work, so any secret on screen lands in its context and log. Route secrets from the source straight to their destination (clipboard → secret manager) and keep them out of `TASK.md` and out of whatever comes back.
+- **Secrets don't travel through transcripts, and "don't report it" is too late.** A GUI session screenshots or reads the page to work, so a secret is captured the moment it renders — before any rule about reporting it can apply. That is why the brief stops the session *before* the reveal rather than trusting it afterwards; the sibling skill shipped with the weaker rule and burned a real credential proving it. Route secrets from the source straight to their destination (clipboard → secret manager) and keep them out of `TASK.md` and out of whatever comes back.
 - **One writer per repo.** The handoff session does GUI work; this session owns the files. Concurrent writes across worktrees lose work.
 - **Clean up.** When the work is accepted, `rm -rf "$HANDOFF"` — the brief may name internal URLs and account handles.

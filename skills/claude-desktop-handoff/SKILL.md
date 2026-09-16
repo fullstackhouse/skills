@@ -1,6 +1,6 @@
 ---
 name: claude-desktop-handoff
-description: Hand one GUI-only step to Claude Desktop running on the same machine, over a shared temp directory, so this session can keep working autonomously instead of stopping. Use when the step needs the user's own logged-in browser (a vendor console with no API, an OAuth app registration, an SSO-gated admin page, anything behind a password manager or passkey), this session is non-interactive (Conductor, `-p`, cloud) or has only a headless browser, and Claude Desktop is installed on this machine — that last fact is what picks this skill over its sibling. Prints one prompt for the user to paste into Claude Desktop; the two sessions then talk through files, so Desktop can ask a question mid-task and get an answer without the user relaying it. Use `desktop-handoff` instead when the hand might be a different machine, a different runtime, or not Claude at all.
+description: Hand one GUI-only step to Claude Desktop running on the same machine, over a shared temp directory, so this session can keep working autonomously instead of stopping. Use when the step needs the user's own logged-in browser (a vendor console with no API, an OAuth app registration, an SSO-gated admin page, anything behind a password manager or passkey), this session is non-interactive (Conductor, `-p`, cloud) or has only a headless browser, and Claude Desktop is installed on this machine — that last fact is what picks this skill over its sibling. Prints one prompt for the user to paste into Claude Desktop; the two sessions then talk through files, so Desktop can ask a question mid-task and get an answer without the user relaying it. Use `desktop-handoff` instead when the hand might be a different runtime, a different OS, or not Claude at all.
 ---
 
 # claude-desktop-handoff
@@ -24,9 +24,14 @@ API or CLI that reaches the target. Don't re-open it. Start at step 1.
 ## 1. Create the shared directory
 
 ```bash
-HANDOFF="${TMPDIR:-/tmp}/claude-desktop-handoff/$(date +%Y%m%d-%H%M%S)-<slug>"
-mkdir -p "$HANDOFF"
+PARENT="${TMPDIR:-/tmp}/claude-desktop-handoff"
+mkdir -p "$PARENT" && chmod 700 "$PARENT"
+HANDOFF="$(mktemp -d "$PARENT/$(date +%Y%m%d-%H%M%S)-<slug>-XXXXXX")"
 ```
+
+`mktemp -d` rather than a bare `mkdir -p`: under the usual `022` umask that would create a
+world-readable directory at a guessable path, and this one carries a brief naming internal
+URLs and account handles — plus, here, whatever Desktop writes back.
 
 Short kebab-case `<slug>`. Keep the absolute path — the prompt and every later step need
 it. Use `$TMPDIR`, not a repo path: one writer per repo, and this brief will name
