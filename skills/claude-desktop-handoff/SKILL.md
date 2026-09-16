@@ -1,6 +1,6 @@
 ---
 name: claude-desktop-handoff
-description: Hand one GUI-only step to Claude Desktop running on the same machine, over a shared temp directory, so this session can keep working autonomously instead of stopping. Use when the step needs the user's own logged-in browser — a vendor console with no API, an OAuth app registration, an SSO-gated admin page, anything behind a password manager or passkey — and this session is non-interactive (Conductor, `-p`, cloud) or has only a headless browser. Prints one prompt for the user to paste into Claude Desktop; the two sessions then talk through files, so Desktop can ask a question mid-task and get an answer without the user relaying it. Use `desktop-handoff` instead when the hand might be a different machine, a different runtime, or not Claude at all.
+description: Hand one GUI-only step to Claude Desktop running on the same machine, over a shared temp directory, so this session can keep working autonomously instead of stopping. Use when the step needs the user's own logged-in browser (a vendor console with no API, an OAuth app registration, an SSO-gated admin page, anything behind a password manager or passkey), this session is non-interactive (Conductor, `-p`, cloud) or has only a headless browser, and Claude Desktop is installed on this machine — that last fact is what picks this skill over its sibling. Prints one prompt for the user to paste into Claude Desktop; the two sessions then talk through files, so Desktop can ask a question mid-task and get an answer without the user relaying it. Use `desktop-handoff` instead when the hand might be a different machine, a different runtime, or not Claude at all.
 ---
 
 # claude-desktop-handoff
@@ -40,7 +40,7 @@ Before writing anything, sort the task's outputs:
 |---|---|
 | Public identifiers (an app id, a URL, a record id) | Desktop reports them in `RESULT.md`. Fine. |
 | A secret that does not exist yet | **Stop Desktop before it exists.** Have it do the structural work and leave the page open; you or the user generate and store the secret. Cleanest option — prefer it. |
-| A secret already on screen | **The user clicks the copy button**, not Desktop — then you run `pbpaste \| <store>` and verify. See the warning below. |
+| A secret already on screen | **The user clicks the copy button**, not Desktop — then you read the clipboard and pipe it straight into the store, and verify. See the warning below. |
 | A secret Desktop must handle itself | Only if it has a shell: have it pipe the value into the store in one command, never into a file or a reply. |
 
 **Do not ask a browser agent to click a copy button "without looking".** It cannot. To
@@ -52,7 +52,12 @@ correctly refused to copy it onward, and the credential had to be rotated.
 
 The shared clipboard is still the right channel — but a **human** has to load it. So the
 rule is: **Desktop does the structural work and stops at the threshold; a person crosses
-it.** Anything on screen may land in a GUI session's context and logs, and a mid-task
+it.**
+
+Reading the clipboard is OS-specific and Claude Desktop ships for macOS *and* Windows, so
+don't hardcode one: `pbpaste` on macOS, `powershell -Command Get-Clipboard` on Windows,
+`wl-paste` or `xclip -o` on Linux. Pipe it into the store in a single command — never into
+a file, never through an `echo` — and verify the stored value before relying on it. Anything on screen may land in a GUI session's context and logs, and a mid-task
 re-auth wall makes it worse, because the pending action can complete while the agent is
 away and it comes back to a page it didn't expect.
 
@@ -82,8 +87,9 @@ tell when a page doesn't match.
 We share a directory. <HANDOFF>
 
 - **Blocked or unsure?** Write your question to `ASK.md` and wait — poll for
-  `REPLY.md` every 15s for up to 5 minutes. I am watching and will answer. Delete
-  both when you have your answer, then carry on.
+  `REPLY.md` every 15s for up to 5 minutes. I am watching and will answer. When the
+  answer arrives, delete `REPLY.md` and carry on — leave `ASK.md` to me, I clear it
+  when I answer.
 - **Done or stopped?** Write `RESULT.md`. That ends the handoff.
 
 `RESULT.md` must cover: what you did and the end state; anything that did not match
@@ -107,11 +113,18 @@ I will relay.
 
 Then say in one line what you'll do when it lands, so the user can redirect you.
 
-Two requirements to note only if they might not hold: the **Claude in Chrome extension
-must be connected** (Desktop cannot drive a browser without it — computer-use grants
-browsers a read-only tier that cannot fill forms), and Desktop needs **filesystem access
-to `$TMPDIR`** for the file channel. If it has neither, this is the wrong skill — fall
-back to `desktop-handoff` and have the user relay.
+Two preconditions, each with its own consequence — check them separately, because they
+fail differently:
+
+- **The Claude in Chrome extension must be connected.** Without it Desktop cannot drive a
+  browser at all — computer-use grants browsers a read-only tier that cannot fill forms —
+  so the skill's whole premise is gone. On its own, that makes this the wrong skill: fall
+  back to `desktop-handoff`.
+- **Desktop needs filesystem access to `$TMPDIR`** for the file channel. Losing this costs
+  the back-channel, not the task: the prompt above already tells Desktop to report in chat
+  instead, and you relay. Degrade, don't abandon.
+
+Note either only if it might not hold.
 
 ## 5. Watch both channels
 
@@ -119,12 +132,18 @@ One background loop, watching for either file. Do not poll in the foreground and
 ask "is it done yet?":
 
 ```bash
-end=$((SECONDS + 3600))
-until [ -f "$HANDOFF/RESULT.md" ] || [ -f "$HANDOFF/ASK.md" ] || [ $SECONDS -ge $end ]; do sleep 5; done
+end=$(( $(date +%s) + 3600 ))
+until [ -f "$HANDOFF/RESULT.md" ] || [ -f "$HANDOFF/ASK.md" ] || [ "$(date +%s)" -ge "$end" ]; do sleep 5; done
 [ -f "$HANDOFF/ASK.md" ] && echo "ASK" || { [ -f "$HANDOFF/RESULT.md" ] && echo "RESULT" || echo "timeout"; }
 ```
 
-On `ASK`: answer into `REPLY.md`, delete `ASK.md`, re-arm the loop. Answer from what you
+`date +%s`, not `$SECONDS` — that one is a bash/ksh/zsh builtin, and under a POSIX `sh`
+such as dash it expands to nothing, making the guard `[ -ge 3600 ]`: a syntax error, not
+a false condition. The loop then waits forever on a handoff nobody completed.
+
+On `ASK`: answer into `REPLY.md`, delete `ASK.md`, re-arm the loop. **Deleting `ASK.md`
+is yours, not Desktop's** — the loop's exit condition is that file existing, so re-arming
+while it is still there fires instantly on a question you already answered, forever. Answer from what you
 know — going back to the user defeats the point. Escalate only if the question reveals
 the brief was wrong about something you cannot decide.
 
@@ -158,11 +177,14 @@ through the clipboard, verify it authenticates before you rely on it.
 Then continue the original work autonomously — that is what this skill buys. Tell the
 user they can close the Desktop conversation, and `rm -rf "$HANDOFF"`.
 
-## Guardrails
+## Hard rules
 
 - **The user starts Desktop.** Never route around a permission you were denied — a
   capability gap is a fair reason to hand off, a denied permission is not.
 - **Don't send a secret through either transcript** when step 2 offers a route that
   avoids it.
 - **One writer per repo.** Desktop does GUI work; this session owns the files.
-- **Clean up**, including any `SECRET` file, with `rm -P`.
+- **Clean up.** When the work is accepted, `rm -rf "$HANDOFF"` — the brief may name
+  internal URLs and account handles. Nothing in this skill writes a secret to a file, and
+  nothing should start: step 2 routes every secret through the clipboard or straight into
+  its store.

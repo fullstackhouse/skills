@@ -13,6 +13,8 @@ The brief always goes out as a file — `TASK.md` in a temp dir — because it i
 
 **The user starts the other session by hand.** That is the approval gate: nothing happens until a person pastes a command. Never spawn it yourself.
 
+**If Claude Desktop is on this machine and the step is browser work, prefer `claude-desktop-handoff`.** It spends two things this skill cannot assume: a shared filesystem, which makes `ASK.md`/`REPLY.md` a real back-channel so a wrong assumption is resolved without a round trip through the user, and Desktop driving the user's already-logged-in Chrome. Come back here when the hand might be a different machine, a different runtime, or not Claude at all.
+
 **The decision to hand off is already made.** Whoever invoked this skill — the user, or you, after finding no API, CLI, or browser tool that reaches the target — settled it. Don't re-open it, don't propose alternatives, don't ask whether it's really necessary. Start at step 1.
 
 ## 1. Create the handoff directory
@@ -63,9 +65,10 @@ Write the brief so a *fresh* session with no memory of this conversation can exe
 
 ## When done
 <The reporting instruction for the channel chosen in step 2:
- - RESULT.md  → "Write your outcome to <HANDOFF>/RESULT.md."
- - user relays → "Print your outcome; the user will relay it."
- - nothing     → "Just say you're done — no report needed.">
+ - RESULT.md    → "Write your outcome to <HANDOFF>/RESULT.md."
+ - user relays  → "Print your outcome; the user will relay it."
+ - runtime channel → name it, and how to send on it, in one line.
+ - nothing      → "Just say you're done — no report needed.">
 
 Cover:
 - What you did, and what the end state is.
@@ -97,15 +100,20 @@ Then add only the setup notes that apply:
 
 ## 5. Wait — only if you chose `RESULT.md`
 
-If the user is relaying, or there's nothing to return, skip this: end your turn and let them come back to you. Don't arm a watcher for a file nobody will write.
+If the user is relaying, or there's nothing to return, skip this: end your turn and let them come back to you. Don't arm a watcher for a file nobody will write. Skip it for a runtime channel too — that channel notifies you itself, so a file wait beside it only adds an hour-long timer nothing will ever trip.
 
 Otherwise arm one background wait — do not poll, and do not ask "is it done yet?":
 
 ```bash
-end=$((SECONDS + 3600))
-until [ -f "$HANDOFF/RESULT.md" ] || [ $SECONDS -ge $end ]; do sleep 5; done
+end=$(( $(date +%s) + 3600 ))
+until [ -f "$HANDOFF/RESULT.md" ] || [ "$(date +%s)" -ge "$end" ]; do sleep 5; done
 [ -f "$HANDOFF/RESULT.md" ] && echo "RESULT.md landed" || echo "timed out after 1h"
 ```
+
+`date +%s`, not `$SECONDS`: that variable is a bash/ksh/zsh builtin, and under a POSIX
+`sh` such as dash it expands to nothing, so the guard becomes `[ -ge 3600 ]` — a *syntax
+error*, not a false condition. The loop then runs forever on a handoff nobody completed,
+which is the one failure a timeout exists to prevent.
 
 Run it in the background so you get exactly one notification when it exits. While waiting, do any part of the work that doesn't depend on the result.
 
@@ -113,13 +121,13 @@ If it times out, don't re-arm silently — tell the user, and confirm they still
 
 ## 6. Take in the result and continue
 
-However it arrived — file, relayed by the user, or just "done":
+However it arrived — file, relayed by the user, over a runtime channel, or just "done":
 
 - **Finished** → continue the original work. Tell the user they can close that session.
 - **Blocked, or the page didn't match** → say so plainly and decide with the user whether to re-brief. To retry, append to `TASK.md` and have them tell the still-open session to re-read it, or start a fresh one.
 - **Never trust it blind.** If the result is load-bearing, verify independently — check the resource exists via an API, re-read the config. A session reporting success is not proof of success. This is why "no return channel" is a real option: the verification is the part that counts.
 
-## Guardrails
+## Hard rules
 
 - **The user starts the session.** Never spawn one to dodge a prompt you'd otherwise have to ask for.
 - **Never use the other session to do something your own permissions blocked.** A capability gap (this session has no GUI) is a fair reason to hand off. A denied permission is not — take that back to the user.
