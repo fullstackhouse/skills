@@ -19,7 +19,7 @@ A vague question cannot be researched, only answered plausibly. If you can't sta
 
 ## 2. Look inside before you look outside
 
-Search the consuming repo — `docs/`, specs, ADRs, `CLAUDE.md`/`AGENTS.md` — and the tracker for this exact decision.
+Search the consuming repo — `docs/`, specs, ADRs, `AGENTS.md`/`CLAUDE.md` — and the tracker for this exact decision.
 
 **This step outranks everything below it.** We have often already decided this, decided it and drifted, or already hit the failure the outside world is about to warn us of. An internal incident beats an external blog post: it happened to us, under our constraints, with consequences someone remembers. Report internal findings first and separately.
 
@@ -41,7 +41,7 @@ Delegating these to parallel subagents is fine, but the fan-out is this skill's 
 
 - **Search budget is finite and shared.** Give each sweep a hard query cap and **reserve at least a third of the total for step 5**. An unbudgeted fan-out spends everything on breadth and leaves nothing for checking.
 - **Run the dissent sweep first.** It's the one a hard rule protects and the first casualty of an exhausted budget.
-- **Sanitize the sweep prompts explicitly.** Subagents inherit the consuming repo's `CLAUDE.md`/`AGENTS.md` and mine it for specifics; telling them to "stay generic" does not work, because they infer the client's products and vendors from that inherited context and search for them *by name*. Give each sweep the sanitized question text plus an explicit list of terms it may not put in a query.
+- **Sanitize the sweep prompts explicitly.** Subagents inherit the consuming repo's `AGENTS.md`/`CLAUDE.md` and mine it for specifics; telling them to "stay generic" does not work, because they infer the client's products and vendors from that inherited context and search for them *by name*. Give each sweep the sanitized question text plus an explicit list of terms it may not put in a query.
 - **Where two sweeps disagree** about the same system, neither claim is usable until you check it yourself.
 - **A sweep that returns nothing has three meanings** — nothing exists, the tool failed, or the system doesn't publish. Record which. "No dissent found" from a sweep whose queries were all refused is not a finding, it's a missing measurement; label it as one and re-run before anyone cites the silence. For a closed enterprise system, all four sweeps coming back empty is the base rate and not evidence of anything — see step 6.
 

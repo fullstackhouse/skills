@@ -13,10 +13,10 @@ A green run achieved by adding a timeout, raising retries, or skipping the test 
 
 This skill is repo-agnostic. Gather from the repository you're running in:
 
-- **Playwright project root** — the directory containing `playwright.config.{ts,js}` and the single-spec run command. Derive from the repo's `CLAUDE.md` / `AGENTS.md` / `package.json` scripts.
+- **Playwright project root** — the directory containing `playwright.config.{ts,js}` and the single-spec run command. Derive from the repo's `AGENTS.md` / `CLAUDE.md` / `package.json` scripts.
 - **Worker constraints** — some projects must run local e2e with `workers=1` (e.g. a dev server that can't handle concurrent SSR) while CI runs higher parallelism. Honor whatever the project's `playwright.config` / docs document; don't assume.
 - **Shared-DB / worktree caveats** — if the project uses per-worktree or shared template databases, inconsistent failures across runs of the *same code* are often environment, not an app race. Note how the repo says to check migration state.
-- **Give-up tracker** — where to file a flake task (the `## Skill profile` in the repo's root `CLAUDE.md`: tracker id + default status/priority/tags). If none configured, ask the user.
+- **Give-up tracker** — where to file a flake task (the `## Skill profile` in the repo's root `AGENTS.md`: tracker id + default status/priority/tags). If none configured, ask the user.
 
 ## Arguments
 
