@@ -1,7 +1,7 @@
 {
   "name": "fsh",
   "description": "Full Stack House Claude Code skills (idea brainstorming & kickoff, prior-art research, delivery workflow, bug/flake hunting, iterative fresh-eyes review loops, change explanation, hands-on test drives, spec/ticket/PR polishing, documentation & agent-instruction audit, CI runner migration to Blacksmith, status reporting, design, document redlines, video/recording briefs, handing GUI-only steps to a session that has a desktop)",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "author": {
     "name": "Full Stack House",
     "url": "https://fullstack.house"
