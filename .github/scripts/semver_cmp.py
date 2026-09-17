@@ -2,9 +2,10 @@
 """Compare two SemVer 2.0.0 versions. Exit 0 and print -1/0/1 for a<b, a==b, a>b.
 
 `sort -V` cannot do this job: it orders `2.0.0-rc.1` ABOVE `2.0.0`, so a
-release-candidate promoted to its final version reads as a downgrade. SemVer
-§11 says the opposite — a pre-release always has lower precedence than the
-release it precedes — which is the whole point of the `fsh-rc` channel.
+release-candidate promoted to its final version would read as a downgrade.
+SemVer §11 says the opposite — a pre-release always has lower precedence than
+the release it precedes. It also rejects malformed versions rather than
+silently comparing them, which `sort -V` will happily do.
 """
 import re
 import sys
