@@ -19,7 +19,11 @@ push is rejected as non-fast-forward, stop and report it — someone else moved 
 
 ## Before the round
 
-Resolve three values, and **assign all of them up front** — an unset variable interpolates
+`SLUG` and `AUTHOR` below are needed by both sources; **`REVIEWER` is the `bot` source's
+alone** — the `human` source derives its candidate from `reviewers` or merged-PR history and
+must never be stopped for want of a bot login, which the repos that use it usually don't set.
+
+Resolve these, and **assign all of them up front** — an unset variable interpolates
 to `""`, which matches no review and fails in exactly the silent-empty way this section
 exists to prevent:
 
@@ -151,8 +155,8 @@ recommended* / 🟡 *Changes recommended* / 🔵 *Needs a closer look*. The yell
 *unresolved threads*, so a PR whose fixes are all pushed but whose threads are still open
 stays 🟡 forever; the blue one on a broad change means "a human should read this", and no
 code fix turns it green. **Judge the round by its findings alone**: no actionable finding is
-`verdict: clean` whatever the colour. On 🔵, record the round, request the human, and don't
-spend a round asking the bot again.
+`verdict: clean` whatever the colour. On 🔵, record the round, **recommend `--source human` in the report** — do not request one
+yourself, for the reason under *Polling* — and don't spend a round asking the bot again.
 
 Write `sources.bot.last_round_severity` as `blocking` only when the round raised a
 correctness bug, a security or data-loss risk, a breaking change, or a failing test — that
@@ -170,8 +174,23 @@ the thread you are answering and the code GitHub holds agree with each other:
 gh api -X POST "repos/$SLUG/pulls/<N>/comments/<comment-id>/replies" -f body='…'
 ```
 
-…and a resolution via the GraphQL `resolveReviewThread` mutation. **Resolve before any
-re-request** — the bot's verdict counts unresolved threads, so a fixed-but-open thread buys
+…and a resolution via the GraphQL `resolveReviewThread` mutation. **That mutation takes a
+thread node id, which no REST call in this file returns** — `/pulls/{n}/comments` gives you
+*comment* database ids, which is what the reply endpoint above consumes and what an agent
+will reach for by default. Fetch the threads separately and match them to the comments you
+answered:
+
+```bash
+gh api graphql -f query='
+  query($owner:String!, $name:String!, $pr:Int!) {
+    repository(owner:$owner, name:$name) { pullRequest(number:$pr) {
+      reviewThreads(first:100) { nodes {
+        id isResolved comments(first:1) { nodes { databaseId path line } } } } } } }
+' -F owner=<owner> -F name=<name> -F pr=<N>
+```
+
+`nodes[].id` is the `threadId`; `comments.nodes[0].databaseId` is what ties it back to the
+comment you replied to. **Resolve before any re-request** — the bot's verdict counts unresolved threads, so a fixed-but-open thread buys
 another 🟡 and another lap.
 
 A finding that comes back on the same line in a later round is a thread you didn't close,

@@ -56,7 +56,10 @@ Before doing anything, record the starting SHA so the "not much changed since in
 mkdir -p .context/deliver
 git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
+export SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)   # Phases 6 and 6b interpolate this
 ```
+
+`SLUG` is exported here because the `gh api` calls downstream are merge-gating reads: an unset variable interpolates to `""`, `repos//…` 404s, and the run can neither tell a skipped check from a failed one nor find a single review comment — while looking like it asked.
 
 Resolve the PR base once, here, and export it — Phases 1, 2b and 5 all read it, and a base re-derived per phase is how a run ends up checking one range and publishing another:
 
@@ -137,7 +140,7 @@ Both artifacts matter: `state.json` (the machine-readable result) and `report.md
 
 | Field | What this skill does with it |
 |---|---|
-| `reviewed_oid` | Phase 7's merge condition — has the review seen what is on the branch now? |
+| `sources.local.reviewed_oid` | Phase 7's merge condition — has **the fresh-context review** seen what is on the branch now? Per-source for a reason: a bot round's own fix commits must not advance the field that answers for the local loop. |
 | `sources.local.exit` | `converged` is the only value that can satisfy Phase 7. `budget-exhausted` reports `blocked`. |
 | `open[]` | blockers and majors still open block the merge; handed-up decisions go in the PR body and the Phase 8 report. |
 
@@ -171,7 +174,9 @@ gh pr view --json number,url,reviewDecision,reviews,headRefOid 2>/dev/null
 - No PR → `gh pr create --base "$BASE_REF"`. Title in Conventional Commits style stating the plain-language outcome. Write the body top-down per the **pr-polish** skill's structure: context/task line → the problem (observable impact, no code identifiers) → the fix (root cause + what the PR does) → technical details → verification → follow-ups.
 - PR exists → the push updated the code, but check the title/description still tell the truth: if the work drifted since they were written (rebase, review rework, scope change, a referenced PR merged), run the **pr-polish** skill — a stale description misleads whoever reads it next.
 
-**The body carries the review evidence.** Moving the review off the PR removes the only public record that one happened, and a human arriving at this PR has no way to tell a reviewed branch from an unreviewed one. Under **Verification**, state it plainly: the rubric the loop used, how many rounds it ran, how many findings it fixed and refuted, and what gate passed. Then, if `open[]` is non-empty, an **Open questions** list — one line per handed-up finding, naming the decision rather than describing a problem. That list is the most useful thing in the body for the person who reviews next.
+**The body carries the review evidence.** Moving the review off the PR removes the only public record that one happened, and a human arriving at this PR has no way to tell a reviewed branch from an unreviewed one. Under **Verification**, state it plainly: the rubric the loop used, how many rounds it ran, how many findings it fixed and refuted, and what gate passed. Then an **Open questions** list — one line per `handed up` entry in `open[]`, naming the decision rather than describing a problem. Key it on those specifically: `open[]` also carries deliberately-`left` nits and, after a `--no-fix` run, `proposed` ones, so a section triggered by "non-empty" would open with a heading and nothing under it. Put the rest under Follow-ups.
+
+On the Phase 3 inline-fallback path there is no `open[]`: say "inline fallback, one round" and list what that round handed up directly. That list is the most useful thing in the body for the person who reviews next.
 
 Everything in that section is published text and passes the Phase 2b gate first: quote no client identifier into a public PR body just because a reviewer's finding mentioned one.
 
@@ -218,7 +223,7 @@ If a check genuinely fails, **fix it and keep going** — don't stop and hand ba
    - **Infra** — fix the config, re-run format + validate locally.
 3. Push the fix. CI restarts; loop back to monitoring.
 
-**A CI fix that changes shipped behaviour goes back through Phase 3.** Green checks are not a review: such a fix carries code no reviewer has read, on a `reviewed_oid` for the old HEAD, and Phase 7 will refuse it. Re-invoke `review-loop` — it resumes its ledger rather than starting over, so the second pass is cheap and dedupes against everything already raised. A test-only, snapshot or workflow fix that changes no shipped behaviour keeps the direct path.
+**A CI fix that changes shipped behaviour goes back through Phase 3.** Green checks are not a review: such a fix carries code no reviewer has read, on a `reviewed_oid` for the old HEAD, and Phase 7 will refuse it. Re-run **Phase 3's invocation verbatim** — `--base` and `--gate scoped` included; a bare `review-loop` picks up that skill's standalone defaults, which means the repo's whole check set (hard rule 3) and a base re-derived from config (wrong on a stacked run). It resumes its ledger rather than starting over, so the pass is cheap and dedupes against everything already raised. A test-only, snapshot or workflow fix that changes no shipped behaviour keeps the direct path.
 
 Hard stop conditions (escalate to user, don't keep grinding):
 - Same failure recurs after 3 fix attempts on the same job — your hypothesis is wrong; stop and ask.
@@ -244,6 +249,8 @@ gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 
 Someone who took the time to comment gets an answer, and an unresolved actionable thread blocks the merge regardless of who left it or whether anyone requested them. Run each finding through the same discipline Phase 3's loop uses — verify it before touching code, fix what holds, reply on the thread, resolve it; reply with the reason and resolve when it doesn't hold; leave it open and hand it up when it's a judgement call. This runs on every invocation, including the ones where the rest of this phase is skipped.
 
+**If `review-loop` is not installed** — the case Phase 3 handles — neither part of this phase's loop is available. The *always* branch above still runs; do it by hand, it is only the two reads plus the reply-and-resolve discipline. Skip the bot round and record it as not run; Phase 7 treats a missing on-record review as non-blocking. At Phase 7's `REVIEW_REQUIRED` branch, request the human directly: take the login from the `reviewers` knob, or the most frequent reviewer of recent merged PRs excluding the author, then `gh pr edit <N> --add-reviewer`.
+
 **Conditionally: put a bot's review on the record.** Run this when the `## Skill profile` sets **`reviewer`**, or when the run carries `--bot-review`. Skip it when the profile sets nothing, or the run carries `--no-bot-review`. Skipping is the common case and is not a gap: Phase 3's review is recorded in the PR body, and Phase 7 requires it to have covered HEAD.
 
 ```
@@ -258,7 +265,7 @@ It requests the bot, polls for a review of *this* HEAD, reads the inline comment
 
 Two things belong to this skill, not that one:
 
-- **The confidentiality gate applies to every reply *and every commit* posted here** — by the loop or by you. A thread reply is published text on a possibly-public PR, and the `bot` source pushes its own fix commits for up to five rounds. Re-run Phase 4's `$TERMS` scan over what this phase added before it goes out, for the reason Phase 4 gives.
+- **The confidentiality gate applies to every reply *and every commit* posted here** — by the loop or by you. A thread reply is published text on a possibly-public PR, and the `bot` source pushes its own fix commits for up to five rounds. If the Phase 2b gate fired, re-run its `$TERMS` scan over what this phase added before it goes out, for the reason Phase 4 gives. (Only if it fired — `TERMS` is set inside that branch, and an unset one makes `grep -inE "$TERMS"` match every line of the diff.)
 - **A bot that never answers is not a blocker on its own.** `sources.bot.exit: awaiting-review` means the *record* is missing, not that the change is unreviewed — Phase 3's review still stands, and Phase 7's conditions decide what that's worth.
 
 ### 7. Auto-merge decision
@@ -275,7 +282,7 @@ git log --oneline "$START"..HEAD          # commits since invocation
 
 Merge condition (ALL must hold):
 
-- **The review covers what is on the branch now.** `sources.local.exit` is `converged` — that is the review this skill always runs, so it is the one that must have finished, not merely "some source did". And `reviewed_oid` equals HEAD, or every commit since it is one this run made that `review-loop`'s equivalence rule covers: a fix made in response to a finding, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Inside a run you know which commits are which; a re-invocation does not, so commits after `reviewed_oid` that this run didn't make are unreviewed code and report `blocked`.
+- **The review covers what is on the branch now.** `sources.local.exit` is `converged` — that is the review this skill always runs, so it is the one that must have finished, not merely "some source did". And `sources.local.reviewed_oid` equals HEAD, or every commit since it is one this run made that `review-loop`'s equivalence rule covers: a fix made in response to a finding, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Inside a run you know which commits are which; a re-invocation does not, so commits after it that this run didn't make are unreviewed code and report `blocked`.
 
   `budget-exhausted` on **`sources.local`** reports `blocked` — that is the review this skill always runs, and its cap ending without convergence never lowers the merge bar. On `bot` it is reported, not blocking: the loop stopped asking a bot, which says nothing about the change that Phase 3's review and the open-threads condition below don't already answer. `awaiting-review` never blocks on its own either (Phase 6b says why). Judge the change by what is open, not by which source ran out of patience. AND
 - **No blocker or major sits open in `state.json`'s `open[]`**, and no actionable review thread on the PR is unresolved — whoever left it. AND
@@ -308,7 +315,9 @@ Merge condition (ALL must hold):
 gh pr view <N> --json mergeStateStatus,reviewDecision
 ```
 
-`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N> --base "$BASE_REF" --gate none`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`. `--gate none`: nothing is being fixed there that CI has not already checked. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
+`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N> --base "$BASE_REF" --gate none --no-fix`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`.
+
+`--no-fix` is what makes `--gate none` safe here, and the pair has to travel together. This phase runs *after* CI has been driven green and after the head check above; a source that fixed and pushed from here would leave the PR's newest commit ungated, unreviewed and unwatched, under a report calling it ready. There is nothing to fix in any case — Phase 6b already answered every thread on the PR. This call requests a person and does nothing else. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
 
 If the condition holds → merge:
 
@@ -348,7 +357,7 @@ The handed-up findings are the part a reader most needs and most easily loses. L
 2. **Never push to the default branch.** This skill operates on a feature branch only.
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. This is why Phase 3 passes `--gate scoped`.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
-5. **Never merge on a review that didn't cover HEAD.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `reviewed_oid` is the one that counts.
+5. **Never merge on a review that didn't cover HEAD.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `sources.local.reviewed_oid` is the one that counts — the fresh-context review's own coverage, not the newest HEAD some source happened to look at.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Don't expand scope under cover of review feedback.** If a finding asks for a refactor beyond the PR's purpose, it comes back handed up — carry it to the user, don't build it.
 8. **Re-invoke `review-loop` only for a reason a phase names** — Phase 6's behaviour-changing CI fix is the one. Never re-invoke a source that came back `budget-exhausted` hoping for a different answer: that count resumes by design, and past the cap the answer is a human. A source that *converged* gets its budget back, because what brings you here is new commits and they deserve the same scrutiny the first pass got. The cap never relaxes Phase 7's conditions either way.

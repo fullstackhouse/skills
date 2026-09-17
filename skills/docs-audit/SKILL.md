@@ -46,7 +46,7 @@ Read the root doc and every nested agent doc in full. Skim the doc tree. Then na
 - **Budget overflow.** A chain over 32 KB. Say *which rules* fall past the cutoff, by reading down to that byte offset — it is nearly always the `Never` list and the validation commands, because they sit at the bottom.
 - **Procedure in the routing file.** The root doc carries worked examples, option tables, and step-by-step recipes. Those are what a referenced doc is for; the root's job is hard rules, boundaries, and where to look next.
 - **No router.** Three or more nested agent docs and no Task Router table at the root. They get found by accident, if at all.
-- **Absent or stale `## Skill profile`.** Every repo-agnostic skill then interrogates the user for the base branch, the check commands, the tracker, the reviewer.
+- **Absent or stale `## Skill profile`.** Every repo-agnostic skill then interrogates the user for the base branch, the check commands, the tracker, the reviewers.
 - **Commands that lie.** A documented `yarn typecheck` that no longer exists sends an agent into a diagnostic detour before it can begin.
 - **Journal in a state doc.** "corrected 2026-…", "an earlier revision said", a struck-through paragraph left in place, a diagram plus a note explaining the diagram is wrong. See rubric §1 — this is the rule most repos have never stated, and the one that compounds fastest.
 - **Doc grown by bug fixes.** A contract or mapping doc that gains a section every time something breaks. The measurements belong in the spec (dated, historical by design); the doc gets the one-line conclusion.
