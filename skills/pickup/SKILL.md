@@ -90,7 +90,9 @@ Keep it lean. It is a plan a reviewer reacts to, not a spec — and a scratch fi
 
 ### 4. The plan round — the last interaction
 
-Present, in one message: the verdict with its strongest evidence, the direction and what it beat, the plan, and **every open question batched into a single list**, each with your default. Then wait.
+Present, in one message: the verdict with its strongest evidence; the direction and what it beat; **the plan, at the brief's own resolution** — the areas it touches, the steps in order, how many PRs they become, and the verification that will prove it worked; **what a go sets running** — `kickoff` → `deliver --no-merge`, ending at ready-for-review with nothing merged and no further questions asked; and **every open question batched into a single list**, each with your default. Then wait.
+
+The plan and the go-contract are not optional paragraphs. A round that reads as evidence plus a question list leaves the user approving an unstated plan — which is the one thing this gate exists to prevent, because after the go nothing is asked again.
 
 The user may answer, alter the plan, change the verdict, or say go. Loop on alterations; each round re-presents only what changed. **Get an explicit go** before Phase 5. After it, do not ask anything again — `kickoff`'s remaining rule (ask once, early, for forking product decisions) is already spent here.
 
@@ -104,6 +106,8 @@ Write every answer back **twice**: into the brief's *Resolved unknowns*, and int
 ### 5. Run
 
 Invoke **kickoff** with the brief path. It decides depth (spec first or straight to code), branches, implements with tests, and calls `deliver --no-merge`, which runs the checks, the local review loop, opens the PR against the base branch with the ticket linked, works the reviewer and CI loops, and moves the ticket to *in review*. Do not reimplement any of that here.
+
+**The go was given on a shape.** When the run departs from it — two planned PRs land as one, a step turns out unnecessary, the verification changes — that departure is named in the report, in the terms the plan round used. Rule 5 forbids asking, not telling.
 
 If `kickoff` parks — a blocker it can't clear — the report says where and why. Don't reopen the plan round to route around it.
 
