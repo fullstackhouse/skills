@@ -46,7 +46,7 @@ Read the root doc and every nested agent doc in full. Skim the doc tree. Then na
 - **Budget overflow.** A chain over 32 KB. Say *which rules* fall past the cutoff, by reading down to that byte offset — it is nearly always the `Never` list and the validation commands, because they sit at the bottom.
 - **Procedure in the routing file.** The root doc carries worked examples, option tables, and step-by-step recipes. Those are what a referenced doc is for; the root's job is hard rules, boundaries, and where to look next.
 - **No router.** Three or more nested agent docs and no Task Router table at the root. They get found by accident, if at all.
-- **Absent or stale `## Skill profile`.** Every repo-agnostic skill then interrogates the user for the base branch, the check commands, the tracker, the reviewer.
+- **Absent or stale `## Skill profile`.** Every repo-agnostic skill then interrogates the user for the base branch, the check commands, the tracker, the reviewers.
 - **Commands that lie.** A documented `yarn typecheck` that no longer exists sends an agent into a diagnostic detour before it can begin.
 - **Journal in a state doc.** "corrected 2026-…", "an earlier revision said", a struck-through paragraph left in place, a diagram plus a note explaining the diagram is wrong. See rubric §1 — this is the rule most repos have never stated, and the one that compounds fastest.
 - **Doc grown by bug fixes.** A contract or mapping doc that gains a section every time something breaks. The measurements belong in the spec (dated, historical by design); the doc gets the one-line conclusion.
@@ -64,7 +64,7 @@ Apply these directly — they have one correct answer and a reviewable diff:
 - **Dead links** — repoint to the moved file, or remove the link if its target is gone.
 - **Index rows** for orphans that should be reachable; a one-clause description each, saying what the doc is good for.
 - **Spec scaffolding** — the template and the index `README.md` when missing, from the rubric's section list. Backfill the index table from the specs already there.
-- **`## Skill profile`** — write the skeleton and fill only what the repo can prove: default branch from `git`, check commands from `package.json` and the CI workflow, reviewer from recent PRs. Leave the rest as explicit `TODO:` lines rather than plausible guesses; a wrong tracker id is worse than a missing one.
+- **`## Skill profile`** — write the skeleton and fill only what the repo can prove: default branch from `git`, check commands from `package.json` and the CI workflow, `reviewers` (plural, people) from recent PRs. Leave the rest as explicit `TODO:` lines rather than plausible guesses; a wrong tracker id is worse than a missing one. **Never fill `reviewer` (singular).** It is a *bot* login whose mere presence switches `deliver` into requesting an on-record bot review, so a human login written there costs a ten-minute poll per round for a review that will never arrive — and it is an opt-in the repo's owner should make deliberately, not one an audit infers from history.
 
 Run whatever the repo uses to validate docs (link checkers, markdown lint) after editing.
 

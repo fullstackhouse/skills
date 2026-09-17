@@ -45,7 +45,8 @@ engineering claim, drop the address: "upstreams a pattern already running in pro
 downstream."
 
 The gate lives in each skill that publishes — `upstream-pr`, `deliver`, `pr-polish`,
-`project-status`. Each carries its own copy so a single-skill symlink install still
+`project-status`, and `review-loop` (whose PR-attached sources post thread replies).
+Each carries its own copy so a single-skill symlink install still
 enforces it: **when you edit one copy, sync the others.**
 
 ## Conventions

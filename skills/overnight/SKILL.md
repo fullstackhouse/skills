@@ -69,7 +69,7 @@ Then get an explicit go. After that message, do not ask anything again.
 Per item, in stack order:
 
 1. Resolve its base: the base branch for a chain's first item, the **previous item's branch** for every other.
-2. Invoke **kickoff** with that item's goal (plus its resolved artifact and answers) and `--base <that branch>`. It decides depth, implements, tests, and calls `deliver --no-merge`, which opens the PR against the parent, requests review, and works the feedback and CI loops.
+2. Invoke **kickoff** with that item's goal (plus its resolved artifact and answers) and `--base <that branch>`. It decides depth, implements, tests, and calls `deliver --no-merge`, which reviews and fixes the change locally, opens the PR against the parent, and works the CI loop.
 3. Record the outcome: PR URL, base, assumptions made, and any follow-up the item surfaced but did not do.
 
 **On failure, cut the branch, not the night.** When an item's gate cannot be made green, or it hits one of `deliver`'s hard stops, that item and **its descendants** stop — they are stacked on it and cannot be built. Every independent chain keeps running. Note where each chain stopped and why; never publish a half-finished item to keep a number up.
