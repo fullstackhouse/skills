@@ -1,11 +1,11 @@
 ---
 name: kickoff
-description: Take an idea, a brainstorm brief, or a ticket and drive it autonomously to a ready-for-review PR — decide the plan depth yourself (spec first, or straight to code), implement with tests, then run deliver in no-merge mode so local checks, the PR, the reviewer, and the feedback loop are handled. Use when asked to "kick off X", "start work on X", or turn an idea into a PR that's ready for review. Never merges.
+description: Take an idea, a brainstorm brief, or a ticket and drive it autonomously to a ready-for-review PR — decide the plan depth yourself (spec first, or straight to code), implement with tests, then run deliver in no-merge mode so local checks, the local review-and-fix loop, the PR, and CI are handled. Use when asked to "kick off X", "start work on X", or turn an idea into a PR that's ready for review. Never merges.
 ---
 
 # kickoff
 
-You are running the **kickoff** skill. Goal: from an idea to a PR sitting **ready for review** — reviewer requested, feedback addressed, CI green — with the human's remaining job being the review and the merge decision, nothing else.
+You are running the **kickoff** skill. Goal: from an idea to a PR sitting **ready for review** — reviewed and hardened locally, findings fixed, CI green — with the human's remaining job being the review and the merge decision, nothing else.
 
 This is `deliver`'s front half's missing counterpart: `deliver` ships a branch that already exists; `kickoff` starts from nothing and stops where the merge decision begins.
 

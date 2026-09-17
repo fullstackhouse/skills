@@ -7,8 +7,15 @@ here because a run got it wrong.
 
 Read `SKILL.md`'s hard rules first; nothing here relaxes them. In particular: the findings
 from these sources go through the same verification (Phase 5) as any other, a refuted bot
-finding gets a reply explaining why, and this skill still never merges and never pushes on
-the caller's behalf.
+finding gets a reply explaining why, and this skill still never merges.
+
+**These two sources do push, and only these two** (hard rule 7). Everything they wait on is
+read from the *remote*: the poll gates on `gh pr view --json headRefOid`. A round that fixes
+locally and does not push re-requests a review of byte-identical code — the same findings
+come back, dedupe reads them as "the fix didn't take", and the source either grinds to its
+cap or records convergence against a HEAD that predates every fix it made. So: **commit,
+fast-forward push, and only then reply, resolve, and re-request.** Never force-push; if the
+push is rejected as non-fast-forward, stop and report it — someone else moved the branch.
 
 ## Before the round
 
@@ -135,15 +142,17 @@ code fix turns it green. **Judge the round by its findings alone**: no actionabl
 `verdict: clean` whatever the colour. On 🔵, record the round, request the human, and don't
 spend a round asking the bot again.
 
-Classify `severity: blocking` only when the round raised a correctness bug, a security or
-data-loss risk, a breaking change, or a failing test — that is what the 3-vs-5 cap turns
-on. It is per round, not sticky: a round returning only nits writes `nits` and the cap
-falls back to 3. Judge it while you are reading, and write it down; a later invocation sees
-only `state.json` and cannot re-derive it.
+Write `sources.bot.last_round_severity` as `blocking` only when the round raised a
+correctness bug, a security or data-loss risk, a breaking change, or a failing test — that
+is what the 3-vs-5 cap turns on. It is per round and per source, not sticky: a round
+returning only nits writes `nits` and the cap falls back to 3. Judge it while you are
+reading, and write it down; a later invocation sees only `state.json` and cannot re-derive
+it.
 
 ## Replying and resolving
 
-Every finding gets both, after the fix is pushed:
+Every finding gets both — after the fix is committed **and pushed**, in that order, so that
+the thread you are answering and the code GitHub holds agree with each other:
 
 ```bash
 gh api -X POST "repos/$SLUG/pulls/<N>/comments/<comment-id>/replies" -f body='…'

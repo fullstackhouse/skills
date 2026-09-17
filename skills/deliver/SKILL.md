@@ -13,6 +13,12 @@ CI is slow and every avoidable push is a real cost — front-load everything loc
 
 **Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 7's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
 
+## Arguments
+
+- **`--no-merge`** — stop at ready-for-review; Phase 7 assesses but never merges. How **kickoff** calls this.
+- **`--base <branch>`** — target `<branch>` instead of the repo default, and compute every diff in the run against it. For stacking.
+- **`--bot-review` / `--no-bot-review`** — force Phase 6b's on-record bot review on or off, overriding the `reviewer` profile knob for this run.
+
 ## Project specifics — read these first
 
 This skill is repo-agnostic. The concrete commands, reviewer, and merge policy come from the repository you're running in. Before Phase 1, gather:
@@ -85,7 +91,7 @@ Run the touched packages' checks IN PARALLEL where independent. These are the sa
 
 If any check fails: fix it, re-run, then commit. Keep history clean — squash fixups into the commit they belong to where reasonable.
 
-This is also the command set Phase 3 hands the review loop as its gate, so getting it right here is what keeps the loop from inventing a check the repo doesn't have.
+Phase 3's `--gate scoped` resolves to this same set, from this same repo config — nothing is handed over, both derive it independently. So getting the repo's documented commands right is what keeps the loop from running a check the repo doesn't have, or the full suite hard rule 3 forbids.
 
 ### 2b. Confidentiality gate — only if this repo is not the sole audience
 
@@ -109,11 +115,15 @@ The same gate applies to anything Phase 6b posts — see that phase.
 
 **This is the review.** Not a warm-up for one: the findings that cost the most rounds live in what the hunks touch — the consumer of a changed function, the environment a config key lands in, the script whose output another script parses — and all of that is readable locally, now, for the price of some tokens instead of a ten-minute wait and a CI run per lap.
 
-Invoke the **review-loop** skill:
+Invoke the **review-loop** skill, passing the base Phase 0 resolved:
 
 ```
-review-loop --source local --quiet-rounds 1 --max-rounds 3 --gate scoped
+review-loop --source local --base "$BASE_REF" --quiet-rounds 1 --max-rounds 3 --gate scoped
 ```
+
+`--base` is not optional. Phase 0 promised nothing downstream re-derives a base; that skill resolves its own from repo config when nobody passes one, and on a `--base` run it would then review the parent's entire diff instead of this branch's increment — burning the whole budget on code the parent's own PR already reviewed.
+
+**If `review-loop` is not installed** — this repo supports symlinking a single skill — don't skip the review and don't improvise a rubric. Run one round of it inline: a fresh reviewer subagent on `git diff "$BASE_REF"...HEAD`, told nothing of the branch's intent, asked for whole files and callers and a severity, a concrete failure scenario and a fix per finding; verify each finding before acting on it; fix what holds; hand up the judgement calls and anything outside the diff. Then carry the same three facts forward by hand — what HEAD was reviewed, whether anything actionable is still open, and what was handed up — because Phase 7 needs them and there will be no `state.json` to read. Say in the report that the review was the inline fallback, not the loop.
 
 Those arguments are deliberate and differ from that skill's standalone defaults:
 
@@ -121,7 +131,7 @@ Those arguments are deliberate and differ from that skill's standalone defaults:
 - **`--max-rounds 3`** — past three, the answer is a human, not another lap.
 - **`--gate scoped`** — the checks from Phase 2, for the packages this diff touches. Not the repo's full gate: a full suite pre-push is slower than the CI it exists to front-load (hard rule 3), and CI owns the full one.
 
-Read `state.json` when it returns. Three fields drive the rest of this run:
+Both artifacts matter: `state.json` (the machine-readable result) and `report.md` (the curve, the rubric, the fixed/refuted counts) — both under the run directory the loop names. Phase 5's PR body needs the second; Phase 7 needs the first:
 
 | Field | What this skill does with it |
 |---|---|
@@ -134,6 +144,13 @@ Read `state.json` when it returns. Three fields drive the rest of this run:
 **Findings outside the diff** come back handed up too. Report them; don't fix them here. Fixing them turns a reviewable branch into a tour of the repo.
 
 ### 4. Commit & push
+
+**Re-run the Phase 2b scan first, if that gate fired.** It ran before Phase 3, and Phase 3 has since committed up to three rounds of code it wrote itself — a comment explaining where a pattern came from, a fixture named after a client system. Nothing is published yet, so a rewrite here is still free; after the push it is the one failure hard rule 6 says a later commit can't undo.
+
+```bash
+git diff "$BASE_REF"...HEAD | grep -inE "$TERMS"
+git log "$BASE_REF"..HEAD --format='%B' | grep -inE "$TERMS"
+```
 
 Commit any work made during the checks and the review loop under the same authorship as the branch's existing commits. Use Conventional Commits.
 
@@ -224,8 +241,10 @@ Someone who took the time to comment gets an answer, and an unresolved actionabl
 **Conditionally: put a bot's review on the record.** Run this when the `## Skill profile` sets **`reviewer`**, or when the run carries `--bot-review`. Skip it when the profile sets nothing, or the run carries `--no-bot-review`. Skipping is the common case and is not a gap: Phase 3's review is recorded in the PR body, and Phase 7 requires it to have covered HEAD.
 
 ```
-review-loop --source bot --pr <N>
+review-loop --source bot --pr <N> --base "$BASE_REF" --gate scoped
 ```
+
+`--gate scoped` for hard rule 3's reason — that skill's default is the repo's *whole* check set, which is the full suite CI is already running on this PR.
 
 It requests the bot, polls for a review of *this* HEAD, reads the inline comments **and** the ones the review body folds away, verifies each finding before spending a code change, fixes, replies, resolves, and caps itself at 3 rounds (5 while blocking findings keep arriving). It updates the same `state.json`, so Phase 7 reads one file whichever sources ran.
 
@@ -266,7 +285,14 @@ Merge condition (ALL must hold):
   A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself. On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up. Report it as `blocked-on-parent-PR` with the parent's number — a healthy stack waiting its turn, not a failure. AND
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
-- All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 6 before calling it red).
+- All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 6 before calling it red), AND
+- **The remote carries what you reviewed and fixed:**
+
+  ```bash
+  [ "$(git rev-parse HEAD)" = "$(gh pr view <N> --json headRefOid --jq .headRefOid)" ]
+  ```
+
+  A squash merge ships the branch GitHub holds, and `--delete-branch` then deletes the local one. An unpushed fix is not merged, it is destroyed — and because CI and the reviewer both read the remote, every other condition above would have gone green on the code *without* it. Push, let CI settle, then re-evaluate.
 
 **A forge that requires an approving review is a stop, not a condition to work around.**
 
@@ -274,7 +300,7 @@ Merge condition (ALL must hold):
 gh pr view <N> --json mergeStateStatus,reviewDecision
 ```
 
-`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N>`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
+`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N> --gate none`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`. `--gate none`: nothing is being fixed there that CI has not already checked. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
 
 If the condition holds → merge:
 
