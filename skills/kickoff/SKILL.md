@@ -15,7 +15,7 @@ This skill is repo-agnostic. Gather from the consuming repo's `AGENTS.md` / `CLA
 
 - **Specs** — where feature specs live (repo directory + naming pattern, or a tracker/Notion location) and how deep they're expected to go. No knob → look for a discoverable convention (`docs/specs/`, `specs/`, `rfcs/`, `design/`); none → the plan embeds in the tracker ticket (when a Tracker is configured) or the PR description. Writing it into the ticket is **this skill's own write** in Phase 2 — `deliver` moves ticket statuses, never bodies.
 - **Tracker** — used to link the ticket that spawned this work; status moves are `deliver`'s job, not yours.
-- **Check commands, reviewer, baseBranch** — all consumed by `deliver`; you don't need to re-derive them, but the implementation must follow the same repo conventions its checks enforce. The one exception is `--base` below: when the caller names a base, this skill has to know it too, because it decides what to branch *from*.
+- **Check commands, baseBranch** — consumed by `deliver`; you don't need to re-derive them, but the implementation must follow the same repo conventions its checks enforce. The one exception is `--base` below: when the caller names a base, this skill has to know it too, because it decides what to branch *from*.
 
 ## Arguments
 
@@ -60,7 +60,7 @@ If mid-implementation the approach turns out wrong (the plan fights the codebase
 
 ### 5. Deliver — no-merge mode
 
-Invoke the **deliver** skill with `--no-merge` — and with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, push, PR open with a top-down body (link the source ticket; name the spec if one was written), reviewer request, the review-feedback and CI loops, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
+Invoke the **deliver** skill with `--no-merge` — and with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, the local review-and-fix loop that hardens the branch before the first push, push, PR open with a top-down body (link the source ticket; name the spec if one was written), the CI loop, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
 
 Do not reimplement any of that here, and never merge from this skill — not even when the diff is tiny and green. The merge decision is the human's by design.
 
