@@ -21,7 +21,7 @@ This skill is repo-agnostic. Gather from the consuming repo's `AGENTS.md` / `CLA
 
 One of:
 
-- **A brainstorm brief path** (from the `brainstorm` skill) — the richest input: its Resolved unknowns and Non-goals are decisions already made; don't re-litigate them.
+- **A brainstorm or pickup brief path** — the richest input: its Resolved unknowns and Non-goals are decisions already made; don't re-litigate them. The brief is an uncommitted working file: never `git add` it or link its path from the PR — carry what the reviewer needs (decisions, assumptions, non-goals) into the spec or PR body.
 - **A tracker ticket URL/ID** — read it; treat its body as the goal and its claims as claims.
 - **A free-text idea** — restate the goal in one sentence before proceeding.
 - **Empty** — ask what to kick off. Do not guess.

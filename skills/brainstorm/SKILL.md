@@ -16,7 +16,7 @@ Do not edit repository files, write code, file tickets, or start implementing du
 This skill is repo-agnostic. Gather from the consuming repo's `AGENTS.md` / `CLAUDE.md` (the `## Skill profile` section is the curated source):
 
 - **Tracker** — where tickets live (Notion DB / Linear project / GitHub issues) plus default status/priority/tags. Used read-only for the Phase 3 reality check, and for the one ticket the park ramp files after confirmation.
-- **Specs** — where feature specs and design docs live. Briefs go in a `briefs/` folder beside them; without the knob or a discoverable spec directory, fall back to `.context/briefs/` when `.context/` exists, else ask where to put it.
+- **Briefs** — a working file, never committed: `.context/briefs/` when `.context/` exists, else ask for a gitignored location. The durable copy is the tracker ticket (ramp 2) or the spec / PR body `kickoff` writes from it (ramp 3).
 - **The repo itself** — read just enough (agent docs, the named area) to discuss the idea concretely. Never guess at what the code does when you can look.
 
 ## Arguments

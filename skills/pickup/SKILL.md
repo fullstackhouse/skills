@@ -16,7 +16,7 @@ The collection already has both halves. `ticket-refresh` makes a ticket's body t
 Repo-agnostic. From the consuming repo's `AGENTS.md` / `CLAUDE.md` (the `## Skill profile` section is the curated source):
 
 - **Tracker** — where the ticket lives and how to reach it (Notion MCP, Linear MCP, `gh issue`); its status vocabulary. This skill reads the ticket, lets `ticket-refresh` correct its body, and writes the Phase 4 decisions back. It never moves Status — `deliver` does that with the PR, and a human does otherwise.
-- **Specs** — where specs and briefs live. The plan brief goes in `<specs dir>/briefs/` (the `brainstorm` convention, so `kickoff` reads it natively); without the knob or a discoverable spec dir, `.context/briefs/` when `.context/` exists, else ask.
+- **Briefs** — a working file, never committed: `.context/briefs/` when `.context/` exists, else ask for a gitignored location. Its durable copies are the ticket (Phase 4 writes every decision back) and the spec or PR body `kickoff` writes from it. Same convention as `brainstorm`, so `kickoff` reads it natively.
 - **Check commands, reviewer, baseBranch** — `deliver`'s; not re-derived here.
 - **Throwaway instance** (the `om-test-drive` knob) — how to boot the app disposably. Phase 2 uses it when a claim can only be measured against a running system.
 
@@ -84,7 +84,7 @@ One file, `<briefs dir>/{YYYY-MM-DD}-{kebab-slug}.md`, in the `brainstorm` brief
 {what the ticket asked for that this run deliberately won't do}
 ```
 
-Keep it lean. It is a plan a reviewer reacts to, not a spec; when the work warrants a full spec at the repo's Specs location, `kickoff` writes it after the go, from this brief. An **Abandon** or **Already done** brief stops at *Root cause* — there is no direction to agree.
+Keep it lean. It is a plan a reviewer reacts to, not a spec — and a scratch file, not a repo doc: never `git add` it, and never link its path from a PR body or the ticket, where it would dangle; when the work warrants a full spec at the repo's Specs location, `kickoff` writes it after the go, from this brief. An **Abandon** or **Already done** brief stops at *Root cause* — there is no direction to agree.
 
 **Open questions is the load-bearing section.** Every fork the implementation would otherwise resolve alone goes here with a proposed default. A brief with a *Do* verdict and an empty Open questions section is either mechanical work or an unexamined one; say which.
 
@@ -94,7 +94,7 @@ Present, in one message: the verdict with its strongest evidence, the direction 
 
 The user may answer, alter the plan, change the verdict, or say go. Loop on alterations; each round re-presents only what changed. **Get an explicit go** before Phase 5. After it, do not ask anything again — `kickoff`'s remaining rule (ask once, early, for forking product decisions) is already spent here.
 
-Write every answer back **twice**: into the brief's *Resolved unknowns*, and into the ticket body as a dated resolution in the repo's ticket conventions, so it survives the session and ships with the PR. A question the user skips gets its default, recorded as *assumed X, because Y* in both places — nothing blocks, nothing is silently guessed.
+Write every answer back **twice**: into the brief's *Resolved unknowns*, and into the ticket body as a dated resolution in the repo's ticket conventions, so it survives the session — the brief does not. A question the user skips gets its default, recorded as *assumed X, because Y* in both places — nothing blocks, nothing is silently guessed.
 
 - **Re-scope** confirmed → rewrite the ticket's *Done when* to the agreed scope (a human just decided it, so this is not a status move). Say in the comment what was dropped and why.
 - **Abandon** or **Already done** confirmed → post the evidence as a comment, propose the status change and @-mention the assignee, and stop. The report is the deliverable. Do not implement a compromise to have something to show.
