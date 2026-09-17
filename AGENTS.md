@@ -1,7 +1,7 @@
 # AGENTS.md
 
-This repo is a Claude Code plugin (**`fsh`**) and a single-plugin marketplace
-(`fullstackhouse-skills`). It contains no application code — the deliverable is the
+This repo is a Claude Code plugin (**`fsh`**) and a marketplace
+(`fullstackhouse-skills`) publishing two plugins — `fsh` and the `fsh-rc` prerelease channel. It contains no application code — the deliverable is the
 skills themselves, in `skills/<name>/SKILL.md` (+ optional `scripts/`, `templates/`,
 `references/`).
 
@@ -27,6 +27,48 @@ installed earlier. The skills were on `main` and still nobody had them.
 CI enforces this (`.github/workflows/version-check.yml`): a PR touching `skills/**` or
 `.claude-plugin/**` fails unless `version` is strictly above the base branch's. Treat
 CI as the backstop, not the reminder.
+
+## The `fsh-rc` prerelease channel
+
+`marketplace.json` publishes **two** plugins from this one repo:
+
+| Plugin | Tracks | Who gets it |
+|---|---|---|
+| `fsh` | `main`, via `"source": "./"` | everyone, on `autoUpdate` |
+| `fsh-rc` | the **`next`** branch, via a pinned `ref` | only whoever installs it by name |
+
+A plugin entry's source object takes a `ref` (and a `sha`), which is the only
+way to publish a branch — a *marketplace* is always cloned at the default branch,
+so pinning has to happen per plugin, not per marketplace.
+
+To prerelease work that is not ready for `main`: push it to `next` with a
+pre-release version (`2.0.0-rc.1`). Testers run:
+
+```bash
+claude plugin install fsh-rc@fullstackhouse-skills
+claude plugin disable fsh          # not optional — see below
+```
+
+Nobody who has not installed `fsh-rc` is affected; the entry alone ships nothing.
+
+**`next` keeps `plugin.json`'s `name` as `fsh`, so the RC's skills stay namespaced
+`/fsh:<skill>`** — you test the command you actually use. That is why disabling
+`fsh` is load-bearing rather than tidiness: with both enabled, two plugins claim
+one namespace and which copy answers `/fsh:deliver` is undefined. Renaming the
+plugin on `next` would namespace them apart, but `name` is the stable identifier
+every existing install references — if that rename ever reached `main` it would
+break all of them, which is a worse failure than remembering one command.
+
+**Pre-release versions sort by SemVer §11, not by `sort -V`.** `sort -V` puts
+`2.0.0-rc.1` *above* `2.0.0`, so promoting an RC to its final version would read
+as a downgrade; the gate uses `.github/scripts/semver_cmp.py` instead.
+
+Keep RC versions on `next` and final versions on the default branch. CI enforces
+the second half: a PR targeting the default branch whose version carries a
+pre-release segment is rejected, because `1.12.0 -> 2.0.0-rc.5` is a legitimate
+forward bump that the downgrade check cannot catch — and merging it would hand
+every `fsh` consumer on `autoUpdate` a release candidate as their stable release.
+
 
 New skill? Also add a row to the README's skill table.
 

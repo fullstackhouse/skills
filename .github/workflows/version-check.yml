@@ -23,12 +23,26 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           manifest=".claude-plugin/plugin.json"
 
-          base_version="$(git show "$BASE_SHA:$manifest" 2>/dev/null | jq -r '.version // empty' || true)"
+          # Distinguish "no manifest on base" (genuinely the first time) from
+          # "could not read it" (malformed JSON, missing jq, unfetched base).
+          # The old `|| true` collapsed both into an empty string, and the empty
+          # string is accepted below — so any error silently skipped the check.
+          if git cat-file -e "$BASE_SHA:$manifest" 2>/dev/null; then
+            base_version="$(git show "$BASE_SHA:$manifest" | jq -r '.version // empty')"
+            if [ -z "$base_version" ]; then
+              echo "::error file=$manifest::base commit's $manifest has no readable \"version\""
+              exit 1
+            fi
+          else
+            base_version=""
+          fi
           head_version="$(jq -r '.version // empty' "$manifest")"
 
           if [ -z "$head_version" ]; then
@@ -50,12 +64,26 @@ jobs:
             exit 1
           fi
 
-          # Reject downgrades. `sort -V` puts the lower SemVer first; the head
-          # version must NOT be the lower of the two.
-          lower="$(printf '%s\n%s\n' "$base_version" "$head_version" | sort -V | head -n1)"
-          if [ "$lower" = "$head_version" ]; then
+          # Reject downgrades. NOT `sort -V`: it orders `2.0.0-rc.1` ABOVE
+          # `2.0.0`, so promoting a release candidate to its final version
+          # would read as a downgrade and fail this gate. See the script.
+          cmp="$(python3 .github/scripts/semver_cmp.py "$base_version" "$head_version")"
+          if [ "$cmp" != "-1" ]; then
             echo "::error file=$manifest::version went backwards ($base_version -> $head_version). Bump it forward."
             exit 1
+          fi
+
+          # The RC channel publishes pre-release versions from `next`. If one
+          # reaches the default branch, every `fsh` consumer on autoUpdate gets
+          # it as their stable release — and the check above cannot catch it,
+          # since 1.12.0 -> 2.0.0-rc.5 is a legitimate forward bump.
+          if [ "$BASE_REF" = "$DEFAULT_BRANCH" ]; then
+            case "$head_version" in
+              *-*)
+                echo "::error file=$manifest::$head_version is a pre-release and this PR targets $DEFAULT_BRANCH. Pre-releases belong on \`next\` (the fsh-rc channel); promote to a final version before merging here."
+                exit 1
+                ;;
+            esac
           fi
 
           echo "OK: version bumped $base_version -> $head_version"
