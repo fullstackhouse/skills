@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), and --bot-review / --no-bot-review to force a PR bot's on-record review on or off. CI is slow and a bot reviewer is slower; do not lean on either as a first pass.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it and stops at ready-for-review. CI is slow and a bot reviewer is slower; do not lean on either as a first pass.
 ---
 
 # deliver
@@ -9,7 +9,7 @@ You are running the **deliver** skill. Goal: take whatever is on the current bra
 
 CI is slow and every avoidable push is a real cost — front-load everything locally before pushing. That includes the **review**: Phase 3 hands the change to the **review-loop** skill, which reviews and fixes it with fresh-context reviewers *before* the first push, so the diff that reaches GitHub is already hardened. A reviewer on the far side of the network — a bot, a person — is something this skill can put on the record (Phase 6b) but never waits on as a first pass.
 
-**No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this), everything through Phase 6b runs unchanged — checks, confidentiality gate, review, PR, CI loop, the tracker's move to *in review* — but Phase 7's merge condition is forced false: leave the PR ready for review, skip Phase 7b, and report. The merge decision stays with the human.
+**No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this) — **or with `--review-rounds 0`, which implies it** — everything through Phase 6b runs unchanged — checks, confidentiality gate, review, PR, CI loop, the tracker's move to *in review* — but Phase 7's merge condition is forced false: leave the PR ready for review, skip Phase 7b, and report. The merge decision stays with the human.
 
 Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to unblock a merge, and there is no merge to unblock; a human is going to open this PR anyway, which is the whole point of handing it back. Requesting one from here would page a colleague per item on an unattended `overnight` run — for a PR whose author has not yet looked at it.
 
@@ -20,6 +20,7 @@ Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to 
 - **`--no-merge`** — stop at ready-for-review; Phase 7 assesses but never merges. How **kickoff** calls this.
 - **`--base <branch>`** — target `<branch>` instead of the repo default, and compute every diff in the run against it. For stacking.
 - **`--bot-review` / `--no-bot-review`** — force Phase 6b's on-record bot review on or off, overriding the `reviewer` profile knob for this run.
+- **`--review-rounds N`** — cap Phase 3's local review at `N` rounds. **0–10, default 3.** Raise it for a change whose review keeps finding real defects. **Don't lower it to 1 or 2 to save time** — Phase 3 fixes what round 1 raises, and with `--quiet-rounds 1` a confirming quiet round then has to fit inside the budget. At `N=1` any finding at all guarantees `budget-exhausted`, which Phase 7 reports as `blocked`, and the loop's own rules forbid buying more rounds by re-invoking. If you have already reviewed the work, pass `0`, not `1`. **`0` skips the review entirely and forces `--no-merge`** — see Phase 3. A value outside 0–10 is a stop, not a clamp: silently reviewing three times when someone asked for thirty is worse than refusing.
 
 ## Project specifics — read these first
 
@@ -57,6 +58,17 @@ mkdir -p .context/deliver
 git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 export SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)   # Phases 6 and 6b interpolate this
+```
+
+Resolve the review budget here too, and **stop rather than clamp** on a value outside 0–10 — silently reviewing three times when someone asked for thirty is worse than refusing:
+
+```bash
+export REVIEW_ROUNDS="${ARG_REVIEW_ROUNDS:-3}"
+case "$REVIEW_ROUNDS" in
+  ''|*[!0-9]*) echo "--review-rounds must be an integer 0-10"; exit 1 ;;
+esac
+[ "$REVIEW_ROUNDS" -le 10 ] || { echo "--review-rounds must be 0-10"; exit 1; }
+echo "$REVIEW_ROUNDS" > .context/deliver/review-rounds
 ```
 
 `SLUG` is exported here because the `gh api` calls downstream are merge-gating reads: an unset variable interpolates to `""`, `repos//…` 404s, and the run can neither tell a skipped check from a failed one nor find a single review comment — while looking like it asked.
@@ -120,10 +132,14 @@ The same gate applies to anything Phase 6b posts — see that phase.
 
 **This is the review.** Not a warm-up for one: the findings that cost the most rounds live in what the hunks touch — the consumer of a changed function, the environment a config key lands in, the script whose output another script parses — and all of that is readable locally, now, for the price of some tokens instead of a ten-minute wait and a CI run per lap.
 
-Invoke the **review-loop** skill, passing the base Phase 0 resolved:
+**First, the skip gate.** If Phase 0 resolved `REVIEW_ROUNDS` to `0`, **do not invoke `review-loop` at all** — go straight to Phase 4, in no-merge mode for the rest of the run. Never pass `--max-rounds 0`: that skill runs at least one round per invocation by design, so `0` there means "review once, then immediately exceed the cap", which reports `budget-exhausted` and lands the run on `blocked` — the opposite of what was asked for, after doing the work that was meant to be skipped.
+
+That coupling to no-merge is the whole reason `0` is allowed. It lets someone who has already reviewed the work skip a redundant pass without also handing them a way to auto-merge code no reviewer read. Everything else still runs: the checks, the confidentiality gate, the PR, the CI loop. The run stops at ready-for-review and the merge belongs to whoever did the reviewing.
+
+Otherwise invoke the **review-loop** skill, passing the base and the budget Phase 0 resolved:
 
 ```
-review-loop --source local --base "$BASE_REF" --quiet-rounds 1 --max-rounds 3 --gate scoped
+review-loop --source local --base "$BASE_REF" --quiet-rounds 1 --max-rounds "$REVIEW_ROUNDS" --gate scoped
 ```
 
 `--base` is not optional. Phase 0 promised nothing downstream re-derives a base; that skill resolves its own from repo config when nobody passes one, and on a `--base` run it would then review the parent's entire diff instead of this branch's increment — burning the whole budget on code the parent's own PR already reviewed.
@@ -133,7 +149,7 @@ review-loop --source local --base "$BASE_REF" --quiet-rounds 1 --max-rounds 3 --
 Those arguments are deliberate and differ from that skill's standalone defaults:
 
 - **`--quiet-rounds 1`** — one round that raises nothing new is enough here, because this is a front-load rather than a hardening run and the change still has CI and a human ahead of it. Pass `--quiet-rounds 2` when the branch warrants it (a migration, an auth path, a public contract); it roughly doubles the cost and is worth it there.
-- **`--max-rounds 3`** — past three, the answer is a human, not another lap.
+- **`--max-rounds "$REVIEW_ROUNDS"`** — default 3; past three, the answer is a human, not another lap. `--review-rounds N` overrides exactly this number and nothing else. The quiet-round threshold and the gate stay put, because they define what "reviewed" *means* rather than how long to keep at it.
 - **`--gate scoped`** — the checks from Phase 2, for the packages this diff touches. Not the repo's full gate: a full suite pre-push is slower than the CI it exists to front-load (hard rule 3), and CI owns the full one.
 
 Both artifacts matter: `state.json` (the machine-readable result) and `report.md` (the curve, the rubric, the fixed/refuted counts) — both under the run directory the loop names. Phase 5's PR body needs the second; Phase 7 needs the first:
@@ -176,7 +192,9 @@ gh pr view --json number,url,reviewDecision,reviews,headRefOid 2>/dev/null
 
 **The body carries the review evidence.** Moving the review off the PR removes the only public record that one happened, and a human arriving at this PR has no way to tell a reviewed branch from an unreviewed one. Under **Verification**, state it plainly: the rubric the loop used, how many rounds it ran, how many findings it fixed and refuted, and what gate passed. Then an **Open questions** list — one line per `handed up` entry in `open[]`, naming the decision rather than describing a problem. Key it on those specifically: `open[]` also carries deliberately-`left` nits and, after a `--no-fix` run, `proposed` ones, so a section triggered by "non-empty" would open with a heading and nothing under it. Put the rest under Follow-ups.
 
-On the Phase 3 inline-fallback path there is no `open[]`: say "inline fallback, one round" and list what that round handed up directly. That list is the most useful thing in the body for the person who reviews next.
+On the Phase 3 inline-fallback path there is no `open[]`: say "inline fallback, one round" and list what that round handed up directly.
+
+Under `--review-rounds 0` there is no run directory at all — no `state.json`, no `report.md`, nothing to read. Don't hunt for one, and don't leave the section out: say plainly that **no local review ran**, that the caller asserted they had reviewed the work themselves, and that the merge is therefore left to a human. That sentence is the most useful thing in the body on such a run, because it is the only signal a later reader gets that this diff was never independently read. That list is the most useful thing in the body for the person who reviews next.
 
 Everything in that section is published text and passes the Phase 2b gate first: quote no client identifier into a public PR body just because a reviewer's finding mentioned one.
 
@@ -222,6 +240,8 @@ If a check genuinely fails, **fix it and keep going** — don't stop and hand ba
    - **Migration / DB** — run the repo's migration check; if a manual migration is missing a snapshot/state update, fix per the repo's docs.
    - **Infra** — fix the config, re-run format + validate locally.
 3. Push the fix. CI restarts; loop back to monitoring.
+
+**Under `--review-rounds 0` there is no re-review** — Phase 3 was skipped, so there is no invocation to repeat and no `reviewed_oid` to invalidate. Fix CI as normal, and name the fix in Phase 8 as code no reviewer has read. The rest of this paragraph applies only when Phase 3 actually ran.
 
 **A CI fix that changes shipped behaviour goes back through Phase 3.** Green checks are not a review: such a fix carries code no reviewer has read, on a `reviewed_oid` for the old HEAD, and Phase 7 will refuse it. Re-run **Phase 3's invocation verbatim** — `--base` and `--gate scoped` included; a bare `review-loop` picks up that skill's standalone defaults, which means the repo's whole check set (hard rule 3) and a base re-derived from config (wrong on a stacked run). It resumes its ledger rather than starting over, so the pass is cheap and dedupes against everything already raised. A test-only, snapshot or workflow fix that changes no shipped behaviour keeps the direct path.
 
@@ -282,6 +302,7 @@ git log --oneline "$START"..HEAD          # commits since invocation
 
 Merge condition (ALL must hold):
 
+- **A review ran at all.** `--review-rounds 0` skipped Phase 3, so this condition fails by construction — the merge cannot happen. **Keep evaluating the rest**, exactly as no-merge mode requires: an unresolved thread, a red pipeline or an open parent PR still decide whether this reports `blocked`, `awaiting-CI` or `blocked-on-parent-PR` rather than `ready-for-review`, and the report must name the skipped review either way. Nothing substitutes for it: green CI is not a review, and neither is the author's word that they read it themselves. AND
 - **The review covers what is on the branch now.** `sources.local.exit` is `converged` — that is the review this skill always runs, so it is the one that must have finished, not merely "some source did". And `sources.local.reviewed_oid` equals HEAD, or every commit since it is one this run made that `review-loop`'s equivalence rule covers: a fix made in response to a finding, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Inside a run you know which commits are which; a re-invocation does not, so commits after it that this run didn't make are unreviewed code and report `blocked`.
 
   `budget-exhausted` on **`sources.local`** reports `blocked` — that is the review this skill always runs, and its cap ending without convergence never lowers the merge bar. On `bot` it is reported, not blocking: the loop stopped asking a bot, which says nothing about the change that Phase 3's review and the open-threads condition below don't already answer. `awaiting-review` never blocks on its own either (Phase 6b says why). Judge the change by what is open, not by which source ran out of patience. AND
@@ -347,7 +368,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 8. Report
 
-Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
+Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`, or "no local review ran (`--review-rounds 0`)" when it was skipped; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
 
 The handed-up findings are the part a reader most needs and most easily loses. List them as decisions, not as a summary of a summary.
 
