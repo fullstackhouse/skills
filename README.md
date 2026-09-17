@@ -114,11 +114,12 @@ The repo-agnostic skills (`deliver`, `review-loop`, `upstream-pr`, `bug-hunt`, `
 - **Specs** — where feature specs and design docs live: a repo directory + naming pattern
   (e.g. `docs/specs/YYYY-MM-DD-slug.md`) or a tracker/Notion location, plus how deep a spec
   is expected to go. `kickoff` writes its spec there when the work warrants one, and
-  `brainstorm` and `pickup` keep their handoff briefs beside them (`<specs dir>/briefs/`); `spec-polish`
+  `spec-polish`
   reads the same knob to find the specs on a branch and the sections the repo mandates; `docs-audit` uses it to locate the spec directory it grades for template, index and naming. Without the
   knob or a discoverable convention, `kickoff` writes the plan into the tracker ticket
-  itself (when a Tracker is configured) or the PR description, and `brainstorm` falls back
-  to `.context/briefs/` when `.context/` exists (otherwise it asks where briefs go).
+  itself (when a Tracker is configured) or the PR description. Handoff briefs from `brainstorm`
+  and `pickup` are not specs and are never committed: they live in `.context/briefs/` (otherwise
+  the skill asks for a gitignored location); the ticket, spec and PR body are their durable copies.
 - **PR review bot** login — `reviewer`, e.g. `copilot-pull-request-reviewer`. Set it only if
   you want a bot review attached to the PR *in addition to* the local `review-loop` pass that
   `deliver` always runs; its presence is what switches that phase on. Must be the login, never
