@@ -25,12 +25,16 @@ exists to prevent:
 
 ```bash
 SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-export REVIEWER=${PROFILE_REVIEWER:-copilot-pull-request-reviewer}   # requested AND matched
+export REVIEWER=$PROFILE_REVIEWER      # requested AND matched; no default — see below
 export AUTHOR=$(gh pr view <N> --json author --jq .author.login)     # excluded everywhere
 ```
 
 `PROFILE_REVIEWER` is the `## Skill profile` **`reviewer`** key (a bot login), not
-`reviewers` (the human list). **It must be the login, never an alias**:
+`reviewers` (the human list). **It has no default.** Unset, and with no login passed
+explicitly, this source has nothing to request: write `sources.bot.exit: no-review` with
+that reason and stop. Falling back to `copilot-pull-request-reviewer` on a repo that never
+configured it buys a ten-minute poll per round for a review that will never arrive, and
+makes the opt-in framing of the knob a fiction. **It must be the login, never an alias**:
 `copilot-pull-request-reviewer` is the only spelling that both lands a
 `gh pr edit --add-reviewer` request *and* matches `.author.login` on the review it produces.
 `@copilot` requests fine and then matches nothing — a poll that outlives a review which
@@ -115,8 +119,16 @@ gh pr view <N> --json reviews \
 A hit from anyone, bot or human, **is** the round's review: read its findings, record its
 `.commit.oid` as `reviewed_oid`, and don't spend a round re-requesting.
 
-Nothing by the timeout → fall back to the `human` source below, set
-`sources.bot.exit` to `awaiting-review`, and **stop**. The bot earns a ten-minute poll; a human does not.
+Nothing by the timeout → set `sources.bot.exit` to `awaiting-review`, report that the bot
+never answered, and **stop this source**. The bot earns a ten-minute poll; a human does not.
+
+**Do not escalate to the `human` source on your own.** Its defining action is `gh pr edit
+--add-reviewer` against a login derived from the repo's merged-PR history — it pages a real
+colleague, on an unattended overnight run as readily as an interactive one, and the result
+is unrecallable. Requesting a person is the caller's decision: `SKILL.md` already refuses to
+improvise a source nobody asked for, and `deliver` states that its branch-protection path is
+the only place it requests one. Recommend `--source human` in the report; let whoever reads
+it decide.
 
 ## Reading the findings
 
@@ -184,7 +196,7 @@ them**, which is the step whose absence makes this source a no-op:
 
 ```bash
 HUMAN=$(gh pr list --state merged --limit 20 --json reviews \
-  --jq "[.[].reviews[].author.login] | map(select(. != \"$AUTHOR\" and . != \"$REVIEWER\")) | group_by(.) | max_by(length)[0] // empty")
+  --jq '[.[].reviews[].author.login] | map(select(. != env.AUTHOR and . != env.REVIEWER)) | group_by(.) | max_by(length)[0] // empty')
 
 if [ -n "$HUMAN" ]; then
   gh pr edit <N> --add-reviewer "$HUMAN"
@@ -193,6 +205,9 @@ else
 fi
 ```
 
+Note the `env.` form inside a single-quoted filter — the rule from the top of this file. An
+interpolated `"$AUTHOR"` breaks under the re-quoting a loop applies and then matches
+nothing, silently, which here means reporting "no candidate" on a repo with an obvious one.
 `// empty` guards the empty candidate list — a bare `max_by(length)[0]` prints `null`,
 exits 0, and the run requests a reviewer literally named `null`. Excluding the author is
 required too: requesting the PR author returns `422`.

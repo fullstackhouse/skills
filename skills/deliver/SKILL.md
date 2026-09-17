@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), and --bot-review to additionally put a PR bot's review on the record. CI is slow and a bot reviewer is slower; do not lean on either as a first pass.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), and --bot-review / --no-bot-review to force a PR bot's on-record review on or off. CI is slow and a bot reviewer is slower; do not lean on either as a first pass.
 ---
 
 # deliver
@@ -10,6 +10,8 @@ You are running the **deliver** skill. Goal: take whatever is on the current bra
 CI is slow and every avoidable push is a real cost — front-load everything locally before pushing. That includes the **review**: Phase 3 hands the change to the **review-loop** skill, which reviews and fixes it with fresh-context reviewers *before* the first push, so the diff that reaches GitHub is already hardened. A reviewer on the far side of the network — a bot, a person — is something this skill can put on the record (Phase 6b) but never waits on as a first pass.
 
 **No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this), everything through Phase 6b runs unchanged — checks, confidentiality gate, review, PR, CI loop, the tracker's move to *in review* — but Phase 7's merge condition is forced false: leave the PR ready for review, skip Phase 7b, and report. The merge decision stays with the human.
+
+Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to unblock a merge, and there is no merge to unblock; a human is going to open this PR anyway, which is the whole point of handing it back. Requesting one from here would page a colleague per item on an unattended `overnight` run — for a PR whose author has not yet looked at it.
 
 **Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 7's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
 
@@ -123,7 +125,7 @@ review-loop --source local --base "$BASE_REF" --quiet-rounds 1 --max-rounds 3 --
 
 `--base` is not optional. Phase 0 promised nothing downstream re-derives a base; that skill resolves its own from repo config when nobody passes one, and on a `--base` run it would then review the parent's entire diff instead of this branch's increment — burning the whole budget on code the parent's own PR already reviewed.
 
-**If `review-loop` is not installed** — this repo supports symlinking a single skill — don't skip the review and don't improvise a rubric. Run one round of it inline: a fresh reviewer subagent on `git diff "$BASE_REF"...HEAD`, told nothing of the branch's intent, asked for whole files and callers and a severity, a concrete failure scenario and a fix per finding; verify each finding before acting on it; fix what holds; hand up the judgement calls and anything outside the diff. Then carry the same three facts forward by hand — what HEAD was reviewed, whether anything actionable is still open, and what was handed up — because Phase 7 needs them and there will be no `state.json` to read. Say in the report that the review was the inline fallback, not the loop.
+**If `review-loop` is not installed** — this repo supports symlinking a single skill — don't skip the review and don't improvise a rubric. Run one round of it inline: a fresh reviewer subagent on `git diff "$BASE_REF"...HEAD`, told nothing of the branch's intent, asked for whole files and callers and a severity, a concrete failure scenario and a fix per finding; verify each finding before acting on it; fix what holds; hand up the judgement calls and anything outside the diff. There will be no `state.json`, so **Phase 7's first condition reads differently on this path, and you must say which path you took.** The fallback satisfies it when its single round left nothing actionable open *and* the HEAD its reviewer read is still HEAD — the same question the field answers, asked by hand. It is one round, so it can never be `converged`; don't write that word, and don't invent a `state.json` to hold it. Report it as *inline fallback, one round* in Phase 8, so a reader can tell a looped review from a single pass.
 
 Those arguments are deliberate and differ from that skill's standalone defaults:
 
@@ -236,6 +238,10 @@ gh pr view <N> --json reviews --jq '.reviews[] | "\(.author.login)\t\(.state)\t\
 gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 ```
 
+**Read the review body as well as the inline comments.** A bot review folds findings into a `<details>` "Suppressed comments" block, and a body reading "Comments generated: 0" routinely sits above three to five of them — so the two API calls above are not the whole round. This matters most on exactly the path that skips the rest of this phase: plenty of repos have a bot reviewing automatically on open, with no request from anyone, so a `deliver` run that never sets `reviewer` still finds a review waiting here. Reading only the inline comments calls such a review clean and merges over it.
+
+**The verdict header is not a finding either.** 🟡 counts unresolved threads, so a PR whose fixes are all pushed stays yellow; 🔵 on a broad change means a human should read it, and no code fix turns it green. Judge by the findings.
+
 Someone who took the time to comment gets an answer, and an unresolved actionable thread blocks the merge regardless of who left it or whether anyone requested them. Run each finding through the same discipline Phase 3's loop uses — verify it before touching code, fix what holds, reply on the thread, resolve it; reply with the reason and resolve when it doesn't hold; leave it open and hand it up when it's a judgement call. This runs on every invocation, including the ones where the rest of this phase is skipped.
 
 **Conditionally: put a bot's review on the record.** Run this when the `## Skill profile` sets **`reviewer`**, or when the run carries `--bot-review`. Skip it when the profile sets nothing, or the run carries `--no-bot-review`. Skipping is the common case and is not a gap: Phase 3's review is recorded in the PR body, and Phase 7 requires it to have covered HEAD.
@@ -246,11 +252,13 @@ review-loop --source bot --pr <N> --base "$BASE_REF" --gate scoped
 
 `--gate scoped` for hard rule 3's reason — that skill's default is the repo's *whole* check set, which is the full suite CI is already running on this PR.
 
+**If Phase 5 reported a base mismatch, pass the PR's own `baseRefName` here instead of `BASE_REF`.** Phase 5 continues against the base the PR already has; a review diffed against a different ref would reply to threads on a diff nobody is looking at — and after a stack's parent lands, `BASE_REF` may name a branch the forge has deleted.
+
 It requests the bot, polls for a review of *this* HEAD, reads the inline comments **and** the ones the review body folds away, verifies each finding before spending a code change, fixes, replies, resolves, and caps itself at 3 rounds (5 while blocking findings keep arriving). It updates the same `state.json`, so Phase 7 reads one file whichever sources ran.
 
 Two things belong to this skill, not that one:
 
-- **The confidentiality gate applies to every reply posted here** — by the loop or by you. A thread reply is published text on a possibly-public PR; the Phase 2b rules hold there exactly as they hold for the diff.
+- **The confidentiality gate applies to every reply *and every commit* posted here** — by the loop or by you. A thread reply is published text on a possibly-public PR, and the `bot` source pushes its own fix commits for up to five rounds. Re-run Phase 4's `$TERMS` scan over what this phase added before it goes out, for the reason Phase 4 gives.
 - **A bot that never answers is not a blocker on its own.** `sources.bot.exit: awaiting-review` means the *record* is missing, not that the change is unreviewed — Phase 3's review still stands, and Phase 7's conditions decide what that's worth.
 
 ### 7. Auto-merge decision
@@ -269,7 +277,7 @@ Merge condition (ALL must hold):
 
 - **The review covers what is on the branch now.** `sources.local.exit` is `converged` — that is the review this skill always runs, so it is the one that must have finished, not merely "some source did". And `reviewed_oid` equals HEAD, or every commit since it is one this run made that `review-loop`'s equivalence rule covers: a fix made in response to a finding, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Inside a run you know which commits are which; a re-invocation does not, so commits after `reviewed_oid` that this run didn't make are unreviewed code and report `blocked`.
 
-  `budget-exhausted` on any source reports `blocked` — the cap ends the looping, it never lowers the merge bar. `awaiting-review` on `bot` or `human` does **not** block on its own (Phase 6b says why); it is reported, and the unresolved-threads condition below is what actually holds the line. AND
+  `budget-exhausted` on **`sources.local`** reports `blocked` — that is the review this skill always runs, and its cap ending without convergence never lowers the merge bar. On `bot` it is reported, not blocking: the loop stopped asking a bot, which says nothing about the change that Phase 3's review and the open-threads condition below don't already answer. `awaiting-review` never blocks on its own either (Phase 6b says why). Judge the change by what is open, not by which source ran out of patience. AND
 - **No blocker or major sits open in `state.json`'s `open[]`**, and no actionable review thread on the PR is unresolved — whoever left it. AND
 - **Nothing is stacked on top of this PR's base** — that is the precise question, and "the base is the default branch" only approximates it: plenty of repos ship through a release or integration branch, and such a repo could never auto-merge under that rule.
 
@@ -300,7 +308,7 @@ Merge condition (ALL must hold):
 gh pr view <N> --json mergeStateStatus,reviewDecision
 ```
 
-`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N> --gate none`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`. `--gate none`: nothing is being fixed there that CI has not already checked. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
+`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N> --base "$BASE_REF" --gate none`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`. `--gate none`: nothing is being fixed there that CI has not already checked. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
 
 If the condition holds → merge:
 
@@ -343,6 +351,7 @@ The handed-up findings are the part a reader most needs and most easily loses. L
 5. **Never merge on a review that didn't cover HEAD.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `reviewed_oid` is the one that counts.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Don't expand scope under cover of review feedback.** If a finding asks for a refactor beyond the PR's purpose, it comes back handed up — carry it to the user, don't build it.
-8. **Never re-invoke `review-loop` to get a different answer.** Its budget belongs to the change, not to the invocation; it resumes its ledger for a reason. Past its cap the answer is a human, and the cap never relaxes Phase 7's conditions.
-9. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
-10. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
+8. **Re-invoke `review-loop` only for a reason a phase names** — Phase 6's behaviour-changing CI fix is the one. Never re-invoke a source that came back `budget-exhausted` hoping for a different answer: that count resumes by design, and past the cap the answer is a human. A source that *converged* gets its budget back, because what brings you here is new commits and they deserve the same scrutiny the first pass got. The cap never relaxes Phase 7's conditions either way.
+9. **A verdict header is not a finding; a folded one is.** Read the review body's suppressed comments alongside the inline ones, ignore the colour, verify before fixing, and never re-request a bot to turn 🔵 into 🟢. This applies whenever a PR carries a review — including the common case where a repo's bot reviews on open and nobody requested it.
+10. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
+11. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.

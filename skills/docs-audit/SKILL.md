@@ -64,7 +64,7 @@ Apply these directly — they have one correct answer and a reviewable diff:
 - **Dead links** — repoint to the moved file, or remove the link if its target is gone.
 - **Index rows** for orphans that should be reachable; a one-clause description each, saying what the doc is good for.
 - **Spec scaffolding** — the template and the index `README.md` when missing, from the rubric's section list. Backfill the index table from the specs already there.
-- **`## Skill profile`** — write the skeleton and fill only what the repo can prove: default branch from `git`, check commands from `package.json` and the CI workflow, reviewer from recent PRs. Leave the rest as explicit `TODO:` lines rather than plausible guesses; a wrong tracker id is worse than a missing one.
+- **`## Skill profile`** — write the skeleton and fill only what the repo can prove: default branch from `git`, check commands from `package.json` and the CI workflow, `reviewers` (plural, people) from recent PRs. Leave the rest as explicit `TODO:` lines rather than plausible guesses; a wrong tracker id is worse than a missing one. **Never fill `reviewer` (singular).** It is a *bot* login whose mere presence switches `deliver` into requesting an on-record bot review, so a human login written there costs a ten-minute poll per round for a review that will never arrive — and it is an opt-in the repo's owner should make deliberately, not one an audit infers from history.
 
 Run whatever the repo uses to validate docs (link checkers, markdown lint) after editing.
 
