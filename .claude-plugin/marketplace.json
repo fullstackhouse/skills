@@ -10,14 +10,6 @@
     {
       "name": "fsh",
       "source": "./"
-    },
-    {
-      "name": "fsh-rc",
-      "source": {
-        "source": "github",
-        "repo": "fullstackhouse/skills",
-        "ref": "next"
-      }
     }
   ]
 }

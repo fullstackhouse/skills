@@ -56,24 +56,11 @@ They become invocable as `/<skill-name>` (e.g. `/bug-hunt`) in any session.
 
 ### Team (marketplace) — for distribution
 
-This repo is both a Claude Code plugin (`.claude-plugin/plugin.json`) and the
-marketplace that publishes it (`.claude-plugin/marketplace.json`).
+This repo is both a Claude Code plugin (`.claude-plugin/plugin.json`) and a
+single-plugin marketplace (`.claude-plugin/marketplace.json`).
 
 The marketplace is named `fullstackhouse-skills`; the plugin inside it is named
 **`fsh`** (so its skills invoke as `/fsh:<skill-name>`, e.g. `/fsh:bug-hunt`).
-
-It publishes a second plugin, **`fsh-rc`** — the prerelease channel, pinned to the
-`next` branch. `fsh` tracks the default branch and is what everyone gets; `fsh-rc`
-reaches only whoever installs it by name. To try work that has not been released:
-
-```
-/plugin install fsh-rc@fullstackhouse-skills
-/plugin disable fsh
-```
-
-Both use the `/fsh:` namespace, so disabling `fsh` is required rather than tidy —
-and it means you test the command you actually use. Re-enable `fsh` (and uninstall
-`fsh-rc`) to go back. See [AGENTS.md](./AGENTS.md) for how RCs are cut.
 
 **Per-user (all repos on a machine):**
 

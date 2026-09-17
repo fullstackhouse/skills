@@ -23,8 +23,6 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
@@ -71,19 +69,6 @@ jobs:
           if [ "$cmp" != "-1" ]; then
             echo "::error file=$manifest::version went backwards ($base_version -> $head_version). Bump it forward."
             exit 1
-          fi
-
-          # The RC channel publishes pre-release versions from `next`. If one
-          # reaches the default branch, every `fsh` consumer on autoUpdate gets
-          # it as their stable release — and the check above cannot catch it,
-          # since 1.12.0 -> 2.0.0-rc.5 is a legitimate forward bump.
-          if [ "$BASE_REF" = "$DEFAULT_BRANCH" ]; then
-            case "$head_version" in
-              *-*)
-                echo "::error file=$manifest::$head_version is a pre-release and this PR targets $DEFAULT_BRANCH. Pre-releases belong on \`next\` (the fsh-rc channel); promote to a final version before merging here."
-                exit 1
-                ;;
-            esac
           fi
 
           echo "OK: version bumped $base_version -> $head_version"
