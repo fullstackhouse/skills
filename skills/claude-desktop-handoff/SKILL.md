@@ -91,10 +91,13 @@ tell when a page doesn't match.
 ## Talking to me
 We share a directory. <HANDOFF>
 
-- **Blocked or unsure?** Write your question to `ASK.md` and wait — poll for
-  `REPLY.md` every 15s for up to 5 minutes. I am watching and will answer. When the
-  answer arrives, delete `REPLY.md` and carry on — leave `ASK.md` to me, I clear it
-  when I answer.
+- **Blocked or unsure?** Write your question to `ASK.md`, then wait for `REPLY.md`
+  **inside a single blocking shell command** — you do not get another turn on your own:
+  `until [ -f <HANDOFF>/REPLY.md ]; do sleep 5; done; cat <HANDOFF>/REPLY.md`
+  Re-run it if it hits a tool timeout. **If you have no shell**, write `ASK.md`, say in
+  chat that you are blocked and what you asked, and **end your turn** — the user will
+  tell you when to continue. Either way: delete `REPLY.md` once you have read it, and
+  leave `ASK.md` to me.
 - **Done or stopped?** Write `RESULT.md`. That ends the handoff.
 
 `RESULT.md` must cover: what you did and the end state; anything that did not match
@@ -102,8 +105,20 @@ these instructions; any non-secret identifier I need; and if you could not finis
 where you stopped and what blocked you.
 ```
 
-The `ASK.md` loop is what makes this worth its own skill. Without it a wrong assumption
-costs a whole round trip through the user.
+The `ASK.md` loop is what makes this worth its own skill — but be precise about what it
+buys, because the obvious reading is wrong.
+
+**Claude Desktop does not poll between turns.** It writes its answer, ends its turn, and
+waits for the user; nothing wakes it when `REPLY.md` appears. A brief that says "poll every
+15s" describes something it cannot do — it will either proceed on its own assumption after
+the wait it *can* perform inside one turn, or sit silently until a human prompts it. Both
+were observed in real runs.
+
+So the loop runs unattended only when Desktop blocks inside one shell command, as above.
+Without a shell, a question still costs a nudge from the user — but a nudge, not a
+re-brief, and the question and the answer stay in files instead of being retyped through a
+human who has to understand both. Design briefs so questions are rare: spell out every
+value you already know, and name the likely stop conditions up front.
 
 ## 4. Print the prompt
 
@@ -115,6 +130,9 @@ Follow its "Talking to me" section — write ASK.md if you get stuck, RESULT.md 
 If you cannot read or write files in that directory, say so in this chat instead and
 I will relay.
 ```
+
+Say "and my terminal" in that prompt whenever the brief needs a shell — the blocking wait
+above, and any `pbpaste`-into-a-secret-store step, both depend on it.
 
 Then say in one line what you'll do when it lands, so the user can redirect you.
 
@@ -146,7 +164,10 @@ until [ -f "$HANDOFF/RESULT.md" ] || [ -f "$HANDOFF/ASK.md" ] || [ "$(date +%s)"
 such as dash it expands to nothing, making the guard `[ -ge 3600 ]`: a syntax error, not
 a false condition. The loop then waits forever on a handoff nobody completed.
 
-On `ASK`: answer into `REPLY.md`, delete `ASK.md`, re-arm the loop. **Deleting `ASK.md`
+On `ASK`: answer into `REPLY.md`, delete `ASK.md`, re-arm the loop — **and tell the user
+to nudge Desktop**, unless the brief had it block in a shell command. Otherwise it is
+asleep and your answer sits unread; "answered, tell Desktop to continue" is part of
+answering, not a courtesy. **Deleting `ASK.md`
 is yours, not Desktop's** — the loop's exit condition is that file existing, so re-arming
 while it is still there fires instantly on a question you already answered, forever. Answer from what you
 know — going back to the user defeats the point. Escalate only if the question reveals
