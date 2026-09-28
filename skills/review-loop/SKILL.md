@@ -224,6 +224,8 @@ Row shape:
 
 Matching is judgement, not string equality: two reviewers describing the same defect in different words is one finding. Match on *same defect, same place*. When genuinely unsure, treat it as new — a duplicate costs one verification, a missed match costs a real finding.
 
+**The trap is a finding your own fix keeps re-opening.** Round 1 says a claim is wrong, you fix it; round 2 says the fix is wrong in a new way, you fix it differently; round 3 says the same. Each round's wording is genuinely new, so each looks like a fresh finding and the ledger grows three entries — which is exactly the shape the "twice in a row" stop exists to catch, and it slips past. **Match on the question, not the sentence**: same file, same section, same *fact under dispute* is one entry however differently each round phrases it. A run that fixed one fact three times and got it wrong twice does not need a fourth attempt; it needs a human.
+
 An existing ledger for this branch is **always resumed, never reset** — it is what stops a refuted finding from returning forever, and it costs nothing to carry.
 
 **The round budget resumes or resets on one question: how the last run of that source ended.**
@@ -245,6 +247,8 @@ Run the source (see **Sources**). One round = one review of the current tree by 
 Union the round's findings — reviewers overlap, which is the redundancy working — then match each against **every ledger entry, whatever its disposition**.
 
 - **Matches a `fixed` entry** → the fix didn't take, or took incompletely. This is a **new finding** again: reset its disposition, re-verify, re-fix. A fix that doesn't hold is exactly what independent re-review is for.
+
+  **Twice in a row is a stop, not a third attempt.** If the same entry comes back `fixed → re-raised` in two consecutive rounds, the fix is not converging on it: restore that hunk to its base text, hand the finding up naming both attempts, and carry on with the rest of the round. Three reviewers who have never spoken to each other, twice, is as much evidence as another lap will buy.
 - **Matches a `refuted` entry** → don't re-verify, don't fix. Append the round to `re-raised:` and move on. **Unless** it arrives with a *materially new argument* the refutation never addressed — then reopen it once, and only once. Materially new means new **evidence**: a check the refutation never ran, a file it never read. A reviewer restating the claim more forcefully, or arguing that it *ought* to be in scope, is not evidence and reopens nothing. Without that escape hatch a single wrong refutation is permanent and the loop launders it into "clean"; with an unlimited one, a stubborn finding cycles forever.
 - **Matches a `handed up` or `left` entry** → append the round, move on. Expected; these are known-open by design.
 
@@ -252,6 +256,24 @@ Union the round's findings — reviewers overlap, which is the redundancy workin
 - **No match** → new. It goes to Phase 5.
 
 Record the counts — `raised / new / confirmed / refuted` — for the curve. They are the only honest evidence of what the loop did.
+
+**Then ask which of this round's findings the loop itself caused.** A fix is a code change like any other and can introduce a defect; when it does, the loop is no longer converging, it is oscillating — and the counts alone hide that, because a fix-induced defect reads as healthy new signal. Blame each new confirmed finding's lines against the commits this run has made:
+
+```bash
+# $LOOP_START is HEAD as it was when this invocation began — NOT the base ref. The range
+# must cover only the round commits this loop made: $BASE..HEAD also contains the author's
+# original work, so every finding about the change under review would read as loop-induced.
+# -l is load-bearing too: git blame abbreviates SHAs and `git log --format=%H` does not,
+# so without it the grep matches nothing and every round looks clean.
+git blame -l -L <start>,<end> HEAD -- <file> \
+  | grep -Ff <(git log --format=%H "$LOOP_START"..HEAD)
+```
+
+Record `LOOP_START` in the ledger header at Phase 1, next to the base — a resumed run needs the
+*original* start, not the head it resumed from, or the earlier rounds' commits stop being visible
+to this test.
+
+A hit means an earlier round wrote the line this round is objecting to. Mark the ledger entry `fix-induced (round N)` and say so in the report — a reader judging the exit needs to know the difference between a loop finding pre-existing defects and a loop generating its own. **Two fix-induced findings in one round, or any fix-induced finding at `major` or above, ends the loop**: restore the hunks those rounds wrote, hand the area up, and report it. Past that point another round is as likely to add a defect as remove one.
 
 ### 5. Verify each new finding, cheaply and adversarially
 
@@ -337,10 +359,19 @@ Then `report.md`, and put it inline in your final message:
 # Review loop: <change in one line>
 
 ## Result
-<Converged after R rounds — Q consecutive rounds raised nothing new, and the <full|scoped>
-gate passed at <sha>.>
-<or: Did not converge — stopped at the R-round cap with N confirmed findings open.>
-<or: Awaiting review — requested from <who> at <when>; nothing has landed.>
+Fill exactly one line, verbatim shape — the wording is the point, because "stopped" and "finished"
+are the two facts a reader most needs to tell apart and prose blurs them:
+
+- `Converged after R rounds — Q consecutive quiet rounds, <full|scoped> gate passed at <sha>.`
+- `Did not converge — stopped at the R-round cap. N in-diff findings open; last round's severity was <blocking|nits>.`
+- `Did not converge — stopped on degradation after R rounds: <N fix-induced findings | a fix that would not hold>.`
+- `Awaiting review — requested from <who> at <when>; nothing has landed against <sha>.`
+- `Not run — <reason>.`
+
+**Never write "converged" on any of the other four**, never soften a cap into "mostly clean", and
+never lead with the fixed count when the loop stopped short — a budget exhaustion presented as a
+result is the one failure mode of this skill that actively misleads. If the loop stopped, the first
+line says so and the counts come after.
 
 ## Findings per round
 
