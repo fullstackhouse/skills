@@ -150,7 +150,7 @@ This skill is repo-agnostic; four things come from the repository it runs in. Re
 ## Arguments
 
 - **`--source local|bot|human`** (comma-separated for several; default `local`).
-- **`--quiet-rounds Q`** — consecutive rounds raising nothing new, required to exit. Per-source defaults in the table above; an explicit value applies to **every** source named in `--source`, so pass it only when you mean it for all of them. `1` on `local` is a coin flip; `3+` costs real money for diminishing return.
+- **`--quiet-rounds Q`** — consecutive rounds raising no blocker and no un-waivered `major` (minors and nits do not count), required to exit. Per-source defaults in the table above; an explicit value applies to **every** source named in `--source`, so pass it only when you mean it for all of them. `1` on `local` is a coin flip; `3+` costs real money for diminishing return.
 - **`--max-rounds M`** — hard cap. On `local` it *is* the cap, default 6. On `bot`/`human` it can only **lower** that source's own cap, never raise it: `--source bot --max-rounds 2` stops at 2, while `--max-rounds 9` there still stops at 3 (5 while blocking findings arrive), because those rounds cost a review wait and a CI run apiece. Reaching a cap is a **non-convergence** result, reported as such.
 - **`--reviewers K`** — `local` fan-out per round. Default 3.
 - **`--gate full|scoped|none`** — what runs at exit, and under `none` what runs at all: it suppresses all three gate points below, not merely the exit one. `full` (default): the repo's whole check set, in configured order. `scoped`: only the checks covering the packages the diff touches — what a caller like `deliver` wants, since a full suite pre-push is slower than the CI it is meant to front-load. `none`: the caller owns the gate entirely; say so in the report.
@@ -325,11 +325,17 @@ Under `--no-fix`, stop here: write the report with everything confirmed and prop
 
 ### 7. Loop control and the gate
 
-**The counter.** A round is **quiet** when it produced no new confirmed **in-diff** finding. Any confirmed in-diff finding, or any code change at all — including a fix for a failing check — resets the counter to zero. Exit when it reaches `--quiet-rounds`, and not before.
+**The counter.** A round is **quiet** when its new confirmed **in-diff** findings contain no blocker and no `major` without a documented waiver. Minors and nits do **not** keep the loop running: they are listed in the report for the author to pick up, not fixed. A blocker or an un-waivered major resets the counter to zero. Exit when it reaches `--quiet-rounds`, and not before.
+
+**Quiet means "nothing blocking", not "nothing new" — and that distinction is the whole termination story.** A loop that exits only when a round raises nothing new cannot terminate on any change with prose in it: every fix rewrites something, and the next fresh reviewer improves the rewrite, forever. Worse, it keeps *fixing* while it waits, and a fix is a code change that can introduce a defect. Three consecutive runs of this loop on one branch never converged once; two of them were blocker-and-major-clean at round 2 and kept going, and the single worst defect any of them produced — a published verification command that silently printed nothing — was written while fixing round 2's **minors**. Under this rule those minors are handed to the author and that command is never written.
+
+This is `om-code-review`'s verdict rule (`Only minors and nits → approve`) used as a loop exit, and it is the right one: a minor is by definition not merge-blocking, so continuing to spend fix-rounds on it trades a style point for a fresh chance at a real bug.
 
 **Out-of-diff findings never reset the counter**, and this is load-bearing rather than lenient. Hard rule 6 says they are handed up and not fixed; an unfixed finding is re-raised by every subsequent round, because each round reads the same repo with fresh eyes. Counting them makes convergence unreachable by construction — the loop burns its whole budget on pre-existing drift it is forbidden to touch and then reports `budget-exhausted`, which a caller reads as "this change is not ready". Ledger them, carry them into the report as follow-ups, and let the counter ignore them.
 
-Note what this makes "quiet" mean: *nothing new in this diff*, not *nothing left anywhere*. Findings sitting at `handed up` and `left` are still open, and reviewers will keep raising them into a run of quiet rounds. The report has to carry them or the exit reads as a clean bill it isn't.
+Note what this makes "quiet" mean: *nothing blocking in this diff*, not *nothing left anywhere*. Minors, nits, and findings sitting at `handed up` or `left` are all still open, and reviewers will keep raising them into a run of quiet rounds. The report has to carry them or the exit reads as a clean bill it isn't — `converged` here means "nothing that should block a merge", never "clean".
+
+**The last fix batch still gets reviewed.** The exit is a property of a *round's findings*, so a round that fixed something is followed by one more review before the loop may stop — otherwise the final commit ships unread, which is the gap `reviewed_oid` exists to expose. Fix, re-review, then exit on the re-review.
 
 **The cap.** On `local` it is `--max-rounds` (default 6) and nothing else — rounds are cheap enough that a flat number is honest, and a loop still finding real defects at round 6 is telling you the change needs a person. On `bot`, the cap is 3 rounds, extended to at most 5 and only while rounds keep surfacing **blocking** findings — a correctness bug, a security or data-loss risk, a breaking change, a failing test. Style nits, naming, doc wording, "consider extracting this" buy no extra round however many there are. At 5, stop regardless: a reviewer still finding real bugs on round 5 is telling you this change needs a human, not another lap. **Count the round when you request it, not when you act on it** — a request that times out is spent, and a counter incremented at the end of a round hands out a free one on every crash.
 
@@ -411,8 +417,11 @@ most valuable thing in this report.>
 <When the refutation rate is high: say so here, in as many words.>
 
 ## What this proves
-Q consecutive rounds, by independent fresh contexts against <rubric>, raised nothing new
-against this diff, and <the gate that ran> passes.
+Q consecutive rounds, by independent fresh contexts against <rubric>, raised nothing
+merge-blocking against this diff — no blocker, no un-waivered major — and <the gate that
+ran> passes. The N minors and nits listed above are open, by design: they were handed to
+you rather than fixed, because spending a fix-round on a minor buys a style point at the
+price of a fresh chance to introduce a real defect.
 
 It does not prove the change is correct. Every reviewer here shares a model, a checklist,
 and therefore a blind spot — running more of them finds more of what they can see and
