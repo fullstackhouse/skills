@@ -255,6 +255,13 @@ Union the round's findings — reviewers overlap, which is the redundancy workin
   **Unless the decision has since been taken** — by the user, or by a commit. A later round's reviewer arguing that a handed-up finding really is in scope does **not** re-open it: reviewers read the whole repo and will always argue for more scope, which is the thing handing up exists to absorb. A handed-up finding is a question put to the user, and a question can be answered: once it has been — in a later invocation, or by a fix that has landed on the branch — re-disposition it to `fixed` (naming the commit) or `refuted` (naming the reason), and record who decided. Without that transition `handed up` is a one-way door: the entry sits in `open[]` for the life of the branch, and a caller that blocks on an open major — `deliver` does — reports `blocked` on that PR forever, with nothing anywhere able to clear it. Recomputing `open[]` from the ledger only helps if the ledger itself can learn.
 - **No match** → new. It goes to Phase 5.
 
+**Reviewers will disagree about severity, and the exit now turns on it — so resolve it by the rubric, not by vote.** Two fresh contexts reading the same finding routinely grade it a rung apart, and with a severity-gated exit that disagreement decides whether the loop stops. Neither majority nor max is right: majority lets two lenient reviewers wave through a false claim, max lets one strict reviewer keep the loop running on wording forever. Go back to what the rubric says a `major` *is* — a wrong factual claim or a broken contract — and apply it to the finding yourself:
+
+- **Asserts something untrue**, or breaks a stated contract → `major`, whoever graded it lower. A wrong count in a security argument and a grant table that 403s at plan time are majors even if two lanes called them minor.
+- **Under-lists, under-explains, or reads badly** without asserting anything false → `minor`, whoever graded it higher. An incomplete list is not a false claim.
+
+Record the disagreement and your resolution in the ledger — the exit depends on it, so a reader checking whether the loop stopped honestly needs to see the call, not just the outcome.
+
 Record the counts — `raised / new / confirmed / refuted` — for the curve. They are the only honest evidence of what the loop did.
 
 **Then ask which of this round's findings the loop itself caused.** A fix is a code change like any other and can introduce a defect; when it does, the loop is no longer converging, it is oscillating — and the counts alone hide that, because a fix-induced defect reads as healthy new signal. Blame each new confirmed finding's lines against the commits this run has made:
@@ -273,7 +280,24 @@ Record `LOOP_START` in the ledger header at Phase 1, next to the base — a resu
 *original* start, not the head it resumed from, or the earlier rounds' commits stop being visible
 to this test.
 
-A hit means an earlier round wrote the line this round is objecting to. Mark the ledger entry `fix-induced (round N)` and say so in the report — a reader judging the exit needs to know the difference between a loop finding pre-existing defects and a loop generating its own.
+A hit means an earlier round wrote the line — **not** that it wrote the defect. Ask the second
+question before believing the first:
+
+```bash
+git show "$BASE":<file>    # is the same defect present in the base version of this passage?
+```
+
+If it is, the fix **reduced** a pre-existing defect instead of introducing one. That is `residual`,
+not `fix-induced`: it does not count toward the degradation threshold and it does not stop the
+loop. Blame answers "who last touched this line", which is the wrong question — a fix that
+rewrites a wrong sentence into a less-wrong one lands on the loop's own commit and looks identical
+to a fix that broke something. A run hit this on its first live firing: a reviewer flagged a grant
+table for omitting a project, blame pinned it to the loop's own round-1 commit, and the base row
+turned out to have omitted *three* — the fix had taken it from three to one. Stopping there would
+have killed a run that converged one round later.
+
+A genuine hit — the defect is absent from the base and present now — means an earlier round wrote
+the line this round is objecting to. Mark the ledger entry `fix-induced (round N)` and say so in the report — a reader judging the exit needs to know the difference between a loop finding pre-existing defects and a loop generating its own.
 
 **What ends the loop is severity, not count.** One fix-induced finding at `major` or above, or two in one round at `minor` or above, means the fixes are doing damage: restore the hunks those rounds wrote, hand the area up, and report `stopped on degradation`. Past that point another round is as likely to add a defect as remove one.
 
