@@ -167,6 +167,12 @@ This skill is repo-agnostic; four things come from the repository it runs in. Re
 5. **Judgement calls go to the user, not into the diff.** Design disagreements, scope questions, product decisions, deprecation-policy calls, anything with more than one defensible fix — hand up. Don't decide them silently, and don't quietly drop them: they land in the report and they qualify the closing claim.
 6. **Stay inside the change, and decide it mechanically.** In-diff means the finding's file appears in `git diff --name-only <base>...HEAD`. Everything else is `handed up`, not fixed — however right it is, however small the fix, however hard a later reviewer argues it belongs. The test is `git show <base>:<file>`: if the defect is already there, this branch did not cause it and does not own it.
 
+   **When the two tests disagree, ownership wins.** A file can be in the diff while the defect in it
+   is not: the line is untouched and `git show <base>:<file>` has it. That is `out-of-diff` — the
+   file list decides the *label*, the base check decides who *owns* it, and a pre-existing defect in
+   a touched file is still not yours. Say so when you hand it up, because a reviewer looking at a
+   file the PR edits will reasonably argue the opposite.
+
    The one narrow exception is a contradiction this diff *creates* — it corrects a claim and a second file now states the opposite. Fix that **only if the diff already touches the second file**; if it doesn't, hand it up. A PR that opens a new file to resolve a contradiction it did not create is exactly how the loop discovers the rest of the repo and the branch stops being reviewable.
 7. **Never merge, and never rewrite history.** No `gh pr merge`, no labels, no tracker mutation, no amend, no force-push. Merging belongs to the caller (`deliver`), which is where the merge conditions live.
 
@@ -271,6 +277,7 @@ You do the fixing — you hold the ledger and the change's intent. Confirmed fin
 - **blocker / major** → fix. Smallest correct change, at the finding's own layer. Any blocker, or any major without an explicit documented waiver, is a change that must not ship.
 - **minor / nit** → fix when it is mechanical and local. Otherwise ledger it as `left`, with the reason. Churning a diff for every nit trades a style point for a fresh chance to introduce a real bug, and the next round reads the churn as new surface.
 - **Anything from hard rule 5 or 6** — judgement calls, out-of-diff findings — → `handed up`, never fixed. Their entry names the decision the user has to make, not a suggestion you almost took.
+- **A fix from an earlier round that reached outside the change** → **undo it**, don't extend it. Restore that hunk to its base text and hand the whole area up. A half-migrated section is more dangerous than a uniformly stale one: the part you fixed lends credibility to the part you did not. Ledger it as `fixed by withdrawal`, naming what you reverted and why.
 
 Regression coverage is part of the fix, not a follow-up: a confirmed correctness finding gets a test that fails without the fix. The next round will raise its absence anyway; better to have written it than to spend a round rediscovering it.
 
