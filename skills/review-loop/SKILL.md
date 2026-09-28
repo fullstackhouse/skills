@@ -273,7 +273,11 @@ Record `LOOP_START` in the ledger header at Phase 1, next to the base — a resu
 *original* start, not the head it resumed from, or the earlier rounds' commits stop being visible
 to this test.
 
-A hit means an earlier round wrote the line this round is objecting to. Mark the ledger entry `fix-induced (round N)` and say so in the report — a reader judging the exit needs to know the difference between a loop finding pre-existing defects and a loop generating its own. **Two fix-induced findings in one round, or any fix-induced finding at `major` or above, ends the loop**: restore the hunks those rounds wrote, hand the area up, and report it. Past that point another round is as likely to add a defect as remove one.
+A hit means an earlier round wrote the line this round is objecting to. Mark the ledger entry `fix-induced (round N)` and say so in the report — a reader judging the exit needs to know the difference between a loop finding pre-existing defects and a loop generating its own.
+
+**What ends the loop is severity, not count.** One fix-induced finding at `major` or above, or two in one round at `minor` or above, means the fixes are doing damage: restore the hunks those rounds wrote, hand the area up, and report `stopped on degradation`. Past that point another round is as likely to add a defect as remove one.
+
+**Fix-induced nits are not degradation.** Every round rewrites prose, and the next reviewer will find something to improve in the rewrite — five fix-induced nits with two approves on the board is a loop working, not a loop oscillating. Counting them as damage would stop a converging run and, worse, prescribe restoring hunks that fixed real defects. The first run to exercise this rule hit exactly that: five fix-induced findings, all `minor`/`nit`, two lanes reporting approve. Ledger them, fix them, keep going.
 
 ### 5. Verify each new finding, cheaply and adversarially
 
