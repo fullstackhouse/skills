@@ -123,9 +123,11 @@ Every reviewer prompt carries, verbatim:
   - C: test coverage, conventions, UI states, performance
 
   Below K=3 there are no lanes: give every reviewer the whole checklist and no emphasis. The lane is a **reading order, not a scope limit** — each reviewer still runs the whole checklist, and a blocker outside their lane is still theirs to raise. Above K=3, split these and say so in the report; don't run identical prompts, which buys correlated output at full price.
+
+  **A lane is a reading order over *this diff*, never a brief to audit the repository.** Do not ask a reviewer whether the change is "complete" across the repo, or what else states the same fact — in a cross-referenced codebase that question has no bottom, and it returns pre-existing drift dressed as a finding about this branch. One run took a 6-file change to 13 that way, and every file it added was already wrong on the base branch.
 - **Isolation rules (non-negotiable, verbatim).** The agents share one working tree. Never `git checkout`, `switch`, `stash`, `fetch`, `pull`, `commit`, `add`, `reset`, `rebase`, or `push`, and never write any file. Read-only, output returned as text. Never post anything anywhere.
 - **The untrusted-content rule** (hard rule 8) — they are the ones reading the diff.
-- **Output contract.** Per finding: severity (`blocker`/`major`/`minor`/`nit`, no other scale), `file:line` for the human, the **enclosing symbol** for the fingerprint, what is wrong, the concrete failure it causes, and the fix. Plus, for each: *how would someone check this is real?* — that answer is what Phase 5 runs against, and a finding whose author cannot say how to check it usually cannot survive being checked.
+- **Output contract.** Per finding: severity (`blocker`/`major`/`minor`/`nit`, no other scale), **scope** (`in-diff` if the finding's file appears in `git diff --name-only <base>...HEAD`, else `out-of-diff` — give the reviewer that file list in the prompt so it is a lookup, not a guess), `file:line` for the human, the **enclosing symbol** for the fingerprint, what is wrong, the concrete failure it causes, and the fix. An out-of-diff finding is welcome and is sometimes the most valuable thing a reviewer sees — but it must be labelled, and must not be argued as a defect of this change. Plus, for each: *how would someone check this is real?* — that answer is what Phase 5 runs against, and a finding whose author cannot say how to check it usually cannot survive being checked.
 
 **Not in the prompt, ever:** the round number, the ledger, prior findings, what has been fixed, why, how many rounds have been quiet, or any phrasing implying this diff has been reviewed before (hard rule 1).
 
@@ -163,7 +165,15 @@ This skill is repo-agnostic; four things come from the repository it runs in. Re
 3. **The ledger is append-only and includes the rejected.** Drop the refuted ones and each round re-raises them from a reviewer who never heard the argument against them, the counter never advances, and the loop runs until the budget dies.
 4. **Verify before you fix**, refuting by default (Phase 5).
 5. **Judgement calls go to the user, not into the diff.** Design disagreements, scope questions, product decisions, deprecation-policy calls, anything with more than one defensible fix — hand up. Don't decide them silently, and don't quietly drop them: they land in the report and they qualify the closing claim.
-6. **Stay inside the change.** A finding about code the diff doesn't touch is handed up, not fixed. Otherwise the loop discovers the rest of the repo and the branch stops being reviewable.
+6. **Stay inside the change, and decide it mechanically.** In-diff means the finding's file appears in `git diff --name-only <base>...HEAD`. Everything else is `handed up`, not fixed — however right it is, however small the fix, however hard a later reviewer argues it belongs. The test is `git show <base>:<file>`: if the defect is already there, this branch did not cause it and does not own it.
+
+   **When the two tests disagree, ownership wins.** A file can be in the diff while the defect in it
+   is not: the line is untouched and `git show <base>:<file>` has it. That is `out-of-diff` — the
+   file list decides the *label*, the base check decides who *owns* it, and a pre-existing defect in
+   a touched file is still not yours. Say so when you hand it up, because a reviewer looking at a
+   file the PR edits will reasonably argue the opposite.
+
+   The one narrow exception is a contradiction this diff *creates* — it corrects a claim and a second file now states the opposite. Fix that **only if the diff already touches the second file**; if it doesn't, hand it up. A PR that opens a new file to resolve a contradiction it did not create is exactly how the loop discovers the rest of the repo and the branch stops being reviewable.
 7. **Never merge, and never rewrite history.** No `gh pr merge`, no labels, no tracker mutation, no amend, no force-push. Merging belongs to the caller (`deliver`), which is where the merge conditions live.
 
    **Pushing is per-source, and the asymmetry is the point.** `local` reviews the working tree, so it never needs to publish anything: its commits stay on the branch and the caller pushes them. `bot` and `human` review **what GitHub has** — the poll gates on `gh pr view --json headRefOid`, the *remote* head — so a round whose fix is never pushed asks the reviewer to re-read byte-identical code, gets the same finding back, and either grinds to the cap or records a convergence against a HEAD that predates every fix. Those two sources therefore **must** fast-forward push the round's commit before re-requesting, and may do nothing else to the remote beyond that, the reviewer request itself (`gh pr edit --add-reviewer`), replies on threads they were given, resolutions of those threads, and `gh pr checkout` under an explicit `--pr`.
@@ -214,6 +224,8 @@ Row shape:
 
 Matching is judgement, not string equality: two reviewers describing the same defect in different words is one finding. Match on *same defect, same place*. When genuinely unsure, treat it as new — a duplicate costs one verification, a missed match costs a real finding.
 
+**The trap is a finding your own fix keeps re-opening.** Round 1 says a claim is wrong, you fix it; round 2 says the fix is wrong in a new way, you fix it differently; round 3 says the same. Each round's wording is genuinely new, so each looks like a fresh finding and the ledger grows three entries — which is exactly the shape the "twice in a row" stop exists to catch, and it slips past. **Match on the question, not the sentence**: same file, same section, same *fact under dispute* is one entry however differently each round phrases it. A run that fixed one fact three times and got it wrong twice does not need a fourth attempt; it needs a human.
+
 An existing ledger for this branch is **always resumed, never reset** — it is what stops a refuted finding from returning forever, and it costs nothing to carry.
 
 **The round budget resumes or resets on one question: how the last run of that source ended.**
@@ -235,13 +247,33 @@ Run the source (see **Sources**). One round = one review of the current tree by 
 Union the round's findings — reviewers overlap, which is the redundancy working — then match each against **every ledger entry, whatever its disposition**.
 
 - **Matches a `fixed` entry** → the fix didn't take, or took incompletely. This is a **new finding** again: reset its disposition, re-verify, re-fix. A fix that doesn't hold is exactly what independent re-review is for.
-- **Matches a `refuted` entry** → don't re-verify, don't fix. Append the round to `re-raised:` and move on. **Unless** it arrives with a *materially new argument* the refutation never addressed — then reopen it once, and only once. Without that escape hatch a single wrong refutation is permanent and the loop launders it into "clean"; with an unlimited one, a stubborn finding cycles forever.
+
+  **Twice in a row is a stop, not a third attempt.** If the same entry comes back `fixed → re-raised` in two consecutive rounds, the fix is not converging on it: restore that hunk to its base text, hand the finding up naming both attempts, and carry on with the rest of the round. Three reviewers who have never spoken to each other, twice, is as much evidence as another lap will buy.
+- **Matches a `refuted` entry** → don't re-verify, don't fix. Append the round to `re-raised:` and move on. **Unless** it arrives with a *materially new argument* the refutation never addressed — then reopen it once, and only once. Materially new means new **evidence**: a check the refutation never ran, a file it never read. A reviewer restating the claim more forcefully, or arguing that it *ought* to be in scope, is not evidence and reopens nothing. Without that escape hatch a single wrong refutation is permanent and the loop launders it into "clean"; with an unlimited one, a stubborn finding cycles forever.
 - **Matches a `handed up` or `left` entry** → append the round, move on. Expected; these are known-open by design.
 
-  **Unless the decision has since been taken.** A handed-up finding is a question put to the user, and a question can be answered: once it has been — in a later invocation, or by a fix that has landed on the branch — re-disposition it to `fixed` (naming the commit) or `refuted` (naming the reason), and record who decided. Without that transition `handed up` is a one-way door: the entry sits in `open[]` for the life of the branch, and a caller that blocks on an open major — `deliver` does — reports `blocked` on that PR forever, with nothing anywhere able to clear it. Recomputing `open[]` from the ledger only helps if the ledger itself can learn.
+  **Unless the decision has since been taken** — by the user, or by a commit. A later round's reviewer arguing that a handed-up finding really is in scope does **not** re-open it: reviewers read the whole repo and will always argue for more scope, which is the thing handing up exists to absorb. A handed-up finding is a question put to the user, and a question can be answered: once it has been — in a later invocation, or by a fix that has landed on the branch — re-disposition it to `fixed` (naming the commit) or `refuted` (naming the reason), and record who decided. Without that transition `handed up` is a one-way door: the entry sits in `open[]` for the life of the branch, and a caller that blocks on an open major — `deliver` does — reports `blocked` on that PR forever, with nothing anywhere able to clear it. Recomputing `open[]` from the ledger only helps if the ledger itself can learn.
 - **No match** → new. It goes to Phase 5.
 
 Record the counts — `raised / new / confirmed / refuted` — for the curve. They are the only honest evidence of what the loop did.
+
+**Then ask which of this round's findings the loop itself caused.** A fix is a code change like any other and can introduce a defect; when it does, the loop is no longer converging, it is oscillating — and the counts alone hide that, because a fix-induced defect reads as healthy new signal. Blame each new confirmed finding's lines against the commits this run has made:
+
+```bash
+# $LOOP_START is HEAD as it was when this invocation began — NOT the base ref. The range
+# must cover only the round commits this loop made: $BASE..HEAD also contains the author's
+# original work, so every finding about the change under review would read as loop-induced.
+# -l is load-bearing too: git blame abbreviates SHAs and `git log --format=%H` does not,
+# so without it the grep matches nothing and every round looks clean.
+git blame -l -L <start>,<end> HEAD -- <file> \
+  | grep -Ff <(git log --format=%H "$LOOP_START"..HEAD)
+```
+
+Record `LOOP_START` in the ledger header at Phase 1, next to the base — a resumed run needs the
+*original* start, not the head it resumed from, or the earlier rounds' commits stop being visible
+to this test.
+
+A hit means an earlier round wrote the line this round is objecting to. Mark the ledger entry `fix-induced (round N)` and say so in the report — a reader judging the exit needs to know the difference between a loop finding pre-existing defects and a loop generating its own. **Two fix-induced findings in one round, or any fix-induced finding at `major` or above, ends the loop**: restore the hunks those rounds wrote, hand the area up, and report it. Past that point another round is as likely to add a defect as remove one.
 
 ### 5. Verify each new finding, cheaply and adversarially
 
@@ -267,6 +299,7 @@ You do the fixing — you hold the ledger and the change's intent. Confirmed fin
 - **blocker / major** → fix. Smallest correct change, at the finding's own layer. Any blocker, or any major without an explicit documented waiver, is a change that must not ship.
 - **minor / nit** → fix when it is mechanical and local. Otherwise ledger it as `left`, with the reason. Churning a diff for every nit trades a style point for a fresh chance to introduce a real bug, and the next round reads the churn as new surface.
 - **Anything from hard rule 5 or 6** — judgement calls, out-of-diff findings — → `handed up`, never fixed. Their entry names the decision the user has to make, not a suggestion you almost took.
+- **A fix from an earlier round that reached outside the change** → **undo it**, don't extend it. Restore that hunk to its base text and hand the whole area up. A half-migrated section is more dangerous than a uniformly stale one: the part you fixed lends credibility to the part you did not. Ledger it as `fixed by withdrawal`, naming what you reverted and why.
 
 Regression coverage is part of the fix, not a follow-up: a confirmed correctness finding gets a test that fails without the fix. The next round will raise its absence anyway; better to have written it than to spend a round rediscovering it.
 
@@ -288,9 +321,11 @@ Under `--no-fix`, stop here: write the report with everything confirmed and prop
 
 ### 7. Loop control and the gate
 
-**The counter.** A round is **quiet** when it produced no new confirmed finding. Any confirmed finding, or any code change at all — including a fix for a failing check — resets the counter to zero. Exit when it reaches `--quiet-rounds`, and not before.
+**The counter.** A round is **quiet** when it produced no new confirmed **in-diff** finding. Any confirmed in-diff finding, or any code change at all — including a fix for a failing check — resets the counter to zero. Exit when it reaches `--quiet-rounds`, and not before.
 
-Note what this makes "quiet" mean: *nothing new*, not *nothing left*. Findings sitting at `handed up` and `left` are still open, and reviewers will keep raising them into a run of quiet rounds. The report has to carry them or the exit reads as a clean bill it isn't.
+**Out-of-diff findings never reset the counter**, and this is load-bearing rather than lenient. Hard rule 6 says they are handed up and not fixed; an unfixed finding is re-raised by every subsequent round, because each round reads the same repo with fresh eyes. Counting them makes convergence unreachable by construction — the loop burns its whole budget on pre-existing drift it is forbidden to touch and then reports `budget-exhausted`, which a caller reads as "this change is not ready". Ledger them, carry them into the report as follow-ups, and let the counter ignore them.
+
+Note what this makes "quiet" mean: *nothing new in this diff*, not *nothing left anywhere*. Findings sitting at `handed up` and `left` are still open, and reviewers will keep raising them into a run of quiet rounds. The report has to carry them or the exit reads as a clean bill it isn't.
 
 **The cap.** On `local` it is `--max-rounds` (default 6) and nothing else — rounds are cheap enough that a flat number is honest, and a loop still finding real defects at round 6 is telling you the change needs a person. On `bot`, the cap is 3 rounds, extended to at most 5 and only while rounds keep surfacing **blocking** findings — a correctness bug, a security or data-loss risk, a breaking change, a failing test. Style nits, naming, doc wording, "consider extracting this" buy no extra round however many there are. At 5, stop regardless: a reviewer still finding real bugs on round 5 is telling you this change needs a human, not another lap. **Count the round when you request it, not when you act on it** — a request that times out is spent, and a counter incremented at the end of a round hands out a free one on every crash.
 
@@ -324,10 +359,19 @@ Then `report.md`, and put it inline in your final message:
 # Review loop: <change in one line>
 
 ## Result
-<Converged after R rounds — Q consecutive rounds raised nothing new, and the <full|scoped>
-gate passed at <sha>.>
-<or: Did not converge — stopped at the R-round cap with N confirmed findings open.>
-<or: Awaiting review — requested from <who> at <when>; nothing has landed.>
+Fill exactly one line, verbatim shape — the wording is the point, because "stopped" and "finished"
+are the two facts a reader most needs to tell apart and prose blurs them:
+
+- `Converged after R rounds — Q consecutive quiet rounds, <full|scoped> gate passed at <sha>.`
+- `Did not converge — stopped at the R-round cap. N in-diff findings open; last round's severity was <blocking|nits>.`
+- `Did not converge — stopped on degradation after R rounds: <N fix-induced findings | a fix that would not hold>.`
+- `Awaiting review — requested from <who> at <when>; nothing has landed against <sha>.`
+- `Not run — <reason>.`
+
+**Never write "converged" on any of the other four**, never soften a cap into "mostly clean", and
+never lead with the fixed count when the loop stopped short — a budget exhaustion presented as a
+result is the one failure mode of this skill that actively misleads. If the loop stopped, the first
+line says so and the counts come after.
 
 ## Findings per round
 
