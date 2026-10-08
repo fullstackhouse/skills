@@ -152,6 +152,10 @@ Exactly one of:
 Several remarks can share one cause; that is **one** ticket, not three. Group them, name
 the cause, and attach every remark in the cluster to it.
 
+**When a cluster maps to more than one existing ticket, they are duplicates.** Pick the
+survivor — the one with the most current premise, then the most history — and list the
+others as proposed duplicates in the §6 report. §7 marks them only after approval.
+
 **Name the side effect of the fix when it is not obvious** — removing a fallback flips many
 records into another state; a backfill changes numbers someone has already exported. The
 client will see that side effect and read it as a new bug unless the reply said it first.
@@ -163,7 +167,7 @@ Default output is compact:
 ```
 | # | Remark (quoted, short) | Verdict | Evidence / ticket |
 |---|---|---|---|
-| R1 | "export still missing the date column" | Has a ticket | ABC-12 (in progress), premise holds |
+| R1 | "export still missing the date column" | Has a ticket | [ABC-12](<url>) (in progress), premise holds |
 | R2 | "totals on the summary page don't match" | Works, needs a data step (data repair) | fixed in <sha>, deployed; rows before <date> need a re-sync |
 | R3 | "can archived items come back?" | Needs a decision | "archived" means hidden in R3, deleted in R5 |
 ```
@@ -174,8 +178,9 @@ Then three buckets, one line per item:
 - **Missing** — new ticket, or a scope line to add.
 - **Needs a data step** — its kind (deploy / config / data repair / manual), and who runs it.
 
-Then the decisions to surface, the remarks you could not verify, and the unanswered earlier
-asks from §1. Full per-remark detail only when the user asks for it.
+Then the proposed duplicates from §5, the decisions to surface, the remarks you could not
+verify, and the unanswered earlier asks from §1. Every ticket is a full link, never a bare
+ID. Full per-remark detail only when the user asks for it.
 
 ### 7. Act — only after approval
 
@@ -188,6 +193,9 @@ Present the proposed tracker changes as one list and wait. On approval:
 - **Mark a superseded duplicate** abandoned, with a pointer to the ticket that survives.
 - **Run `ticket-refresh`** on each ticket §4 marked *stale premise* and the user approved.
 - **Do not move any other status.** A status the user didn't name stays where it is.
+
+Then list the link of every ticket created, appended to, marked or refreshed, with what
+changed in each.
 
 ### 8. Draft the reply
 
@@ -203,6 +211,8 @@ In the **Client language**, for the **Audience**. The user sends it; you never p
 - **Answer the unanswered earlier ask** from §1 explicitly.
 - **One reply per thread**, short, in the thread's order. Remarks with a ticket get the
   promise the ticket supports, nothing stronger.
+- **Link each ticket the client can open** next to the remark it covers. One they can't
+  open gets no link and no ID — describe the work instead.
 - **One client per reply.** Nothing about another client goes in it — no name, no
   comparison ("same issue we fixed for X"), no borrowed screenshot or number. Reusable work
   is described generically. The same holds for internal detail the client hasn't been
