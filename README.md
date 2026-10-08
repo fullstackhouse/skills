@@ -38,10 +38,11 @@ read what a counterparty changed in a contract.
 | [`zoom-out`](./skills/zoom-out/SKILL.md) | Break mid-task tunnel vision: restate the goal from the original request, mark sunk work ignorable, measure the decision space, get a fresh-context second opinion (subagent that never sees the current approach), present 2–3 options-in-kind + a recommendation. Analysis only until the user picks. |
 | [`prior-art`](./skills/prior-art/SKILL.md) | "How do other big players do this?" — answered in a checkable form: sharpen into a decision, look inside our own repo first, name the one axis that decides transferability, sweep by source class on a budget (dissent first), **open every source the verdict rests on yourself**, grade on strength × who-checked-it — including what closed vendors like SAP or Palantir are *known* to do, admitted as `consensus` when it would be corrected by anyone who runs the thing daily — and split the output into a paste-ready verdict + a separate evidence file. Read-only. |
 | [`radar`](./skills/radar/SKILL.md) | One artifact from outside — a post, a launch, a thread, a link with no question attached — turned into a verdict on whether anything **here** should change: open it for real (never summarize what you couldn't fetch), quote the load-bearing claims, then reconstruct *this* context's shape from its own docs and name the assumption the advice needs. "The artifact is correct" and "it applies here" are different findings, and only the second is being asked for. Lands on one of six verdicts — default `Nothing`, and every non-acting verdict names the fact that would reopen it — plus at most one routed next step, and a one-screen note that ships regardless of the verdict. Works for a company, a client's repo, or a personal decision. Read-only until confirmed. |
+| [`feedback-triage`](./skills/feedback-triage/SKILL.md) | A batch of client or stakeholder remarks — a thread or several, an email, meeting notes — mapped onto the tracker and the code, remark by remark: read the source yourself (never the paraphrase; "still" means an earlier ask went unanswered), split into atomic remarks, then check each against the tracker (structured **and** semantic search), the code on the default branch, the specs, the deployed revision, and **whether existing data was rewritten after the fix**. Exactly one verdict each — works already / works but needs a data step / has a ticket / add to a ticket / new ticket / needs a decision — clustered by root cause, reported as a short table plus *exists* / *missing* / *needs a data step*. Tracker changes only after approval; a reply draft in the client's language that admits no bug that isn't one. `--sweep` re-reads a channel and flags every uncovered remark. Never posts. |
 | [`desktop-handoff`](./skills/desktop-handoff/SKILL.md) | Get one GUI-only step done when the running session has no desktop (Conductor, `-p`, cloud, headless browser): write a `TASK.md` into a temp dir, print one command for the user to start a GUI-capable session **by hand** — that's the approval gate — then take the result back over whichever channel fits: a `RESULT.md` file, the user relaying it, a runtime channel when one already works, or nothing at all when the outcome is something you can just verify yourself. Runtime-agnostic (no IPC/tmux/MCP), so any agent that reads and writes files can be the hand, on any OS. Carries the computer-use gotchas: macOS-only in the CLI, Pro/Max, gated off non-interactive mode, `/mcp` enablement persists per *project path*. |
 | [`claude-desktop-handoff`](./skills/claude-desktop-handoff/SKILL.md) | Two-way sibling of `desktop-handoff` for when Claude Desktop runs on the *same machine*: the shared temp directory makes files a real bidirectional channel, so Desktop writes `ASK.md` mid-task and gets `REPLY.md` back without the user relaying, and this session continues autonomously once `RESULT.md` lands. Leans on the two things sameness buys — Desktop drives the user's **already logged-in** Chrome (sessions, password manager, passkeys, no login to engineer), and the shared clipboard carries a secret through **neither** transcript. Knows why a browser agent cannot copy a secret "without looking", and treats vendor re-auth walls as stop conditions. |
 
-`explain`, `brainstorm`, `kickoff`, `overnight`, `pickup`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `docs-audit`, `blacksmith`, `patch`, `review-queue`, `review-loop`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, `design-explore`, `prior-art`, and `radar` are **repo-agnostic** — they derive
+`explain`, `brainstorm`, `kickoff`, `overnight`, `pickup`, `deliver`, `upstream-pr`, `pr-polish`, `ticket-refresh`, `ticket-polish`, `spec-polish`, `docs-audit`, `blacksmith`, `patch`, `review-queue`, `review-loop`, `bug-hunt`, `flake-hunt`, `project-status`, `design-polish`, `design-explore`, `prior-art`, `radar`, and `feedback-triage` are **repo-agnostic** — they derive
 project-specific commands, paths, and policy at runtime (see [Skill profile](#skill-profile)
 below). A repo with its own sharper, hardcoded variant can keep it in its `.claude/skills/`
 alongside these (plugin skills are namespaced, so they don't collide — see Install).
@@ -162,6 +163,13 @@ The repo-agnostic skills (`deliver`, `review-loop`, `upstream-pr`, `bug-hunt`, `
 - **Status reporting** (`project-status`) — Slack status channel, tracker (Linear team/project
   IDs and/or Notion database), roadmap source (Linear projects/cycles or a Notion page),
   and audience (e.g. non-technical business owner).
+- **Client feedback** (`feedback-triage`) — reuses **Tracker**, **Status channel** and
+  **Audience** above, plus three of its own:
+  - **Feedback channel** — where client remarks arrive (default: the status channel).
+  - **Client language** — the language of reply drafts (default: the language of the remark).
+  - **Data repair step** — what "rewrite existing data" means here (re-sync, backfill,
+    reindex) and how to start it. Unset → derived from the repo's agent docs, else the skill
+    asks.
 
 Repo slug and default branch are derived from `git` / `gh`, not the profile. If a needed
 knob is missing, the skills fall back to asking you.
@@ -218,8 +226,8 @@ upstream PR — hence the gates.
 Enforcement lives in the skills that publish: `upstream-pr` (Phase 2 guardrail + Phase 5 body
 re-scan + hard rule), `deliver` (Phase 2b, gated on repo visibility/owner + hard rule),
 `pr-polish` (verification step, incl. leaks inherited from the old body), `project-status`
-(one client per status), `review-loop` (hard rule 11, on every thread reply its PR-attached
-sources post). Each carries its own copy so a single-skill symlink install still
+(one client per status), `feedback-triage` (one client per reply draft), `review-loop` (hard
+rule 11, on every thread reply its PR-attached sources post). Each carries its own copy so a single-skill symlink install still
 enforces it — keep them in sync when editing one.
 
 ## Conventions
