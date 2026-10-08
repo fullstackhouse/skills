@@ -54,7 +54,8 @@ section is the curated source); ask only for what no file answers:
   input is a **list of requests**, and the question is where each one already stands.
 - **`pickup`** — one ticket to a PR. This skill ends at a ticket; `pickup` can take any
   ticket it creates from there.
-- **`ticket-refresh`** — runs *inside* this skill when a matching ticket turns out stale.
+- **`ticket-refresh`** — runs *inside* this skill, after §7 approval, when a matching
+  ticket turns out stale. It edits the body and posts a comment, so never during triage.
 - **`project-status`** — outbound status for the whole project. This is inbound remarks.
 
 ## Arguments
@@ -99,8 +100,11 @@ the batch is large; each returns facts with locations, not prose.
   a semantic search on the remark's own wording. The client's words rarely match the
   ticket title: they say "the totals are off", the ticket says "rounding in summary
   aggregation". Read the hits, including closed ones.
-- **Code on the freshly fetched default branch.** `git fetch` first, then read the path the
-  remark exercises. A verdict of "works" cites `file:line`.
+- **Code on the freshly fetched default branch.** Derive the default (`gh repo view --json
+  defaultBranchRef` or `git symbolic-ref refs/remotes/origin/HEAD`), `git fetch origin
+  <default>`, then read the **remote-tracking** ref — `git show origin/<default>:<path>`,
+  `git grep <term> origin/<default>` — never the working tree or the local `<default>`,
+  which a fetch does not move. A verdict of "works" cites `file:line` at that ref's SHA.
 - **Specs and design docs.** A remark may ask to reverse a decision someone recorded on
   purpose. That is a decision for a human, not a ticket.
 - **Production.** Is the fix in the deployed revision? `git merge-base --is-ancestor
@@ -122,15 +126,22 @@ Exactly one of:
 | Verdict | Means | Carries |
 |---|---|---|
 | **Works already** | Behaves as asked on the deployed revision | `file:line` proof, and where the client can see it |
-| **Works, needs a data step** | Code is right; a backfill, deploy, config change or manual operation is outstanding | the step, who runs it, and what changes when it has run |
+| **Works, needs a data step** | Code is right; something outside the code is outstanding | the step's kind, who runs it, and what changes when it has run |
 | **Has a ticket** | A ticket covers it | ID, status, and whether its premise still holds |
 | **Add to an existing ticket** | A ticket covers the area but not this case | one scope line + one DoD line to append |
 | **New ticket** | Nothing covers it | title, problem in the client's terms, DoD |
 | **Needs a decision** | It reverses a recorded decision, or it is a misunderstanding | the decision or the two meanings, stated — not resolved |
 
+- **Works, needs a data step** names its kind, because each one fixes something different
+  and the reply promises different things: **deploy** (the fix is merged, not in the deployed
+  revision), **config** (a flag or setting), **data repair** (the fix is deployed but records
+  written before it are not rewritten — the **Data repair step** knob), or **manual** (a
+  one-off operation). Never propose a re-sync when what is missing is a deploy.
 - **Has a ticket** checks the ticket's premise, not just its existence. A ticket written
-  before an architecture change can carry a hypothesis that no longer applies; route it to
-  **`ticket-refresh`** rather than citing it as covered.
+  before an architecture change can carry a hypothesis that no longer applies; mark it
+  *stale premise* and propose a **`ticket-refresh`** in §7 rather than citing it as covered.
+  Do not run it now — it edits the ticket, and nothing in the tracker changes before
+  approval.
 - **Needs a decision** covers the quiet case too: the client uses one word for two different
   things ("archived" meaning both *hidden from the list* and *deleted*), or two remarks in the
   batch ask for opposite behaviour. Surface it. Do not pick.
@@ -153,7 +164,7 @@ Default output is compact:
 | # | Remark (quoted, short) | Verdict | Evidence / ticket |
 |---|---|---|---|
 | R1 | "export still missing the date column" | Has a ticket | ABC-12 (in progress), premise holds |
-| R2 | "totals on the summary page don't match" | Works, needs a data step | fixed in <sha>, deployed; rows before <date> need a re-sync |
+| R2 | "totals on the summary page don't match" | Works, needs a data step (data repair) | fixed in <sha>, deployed; rows before <date> need a re-sync |
 | R3 | "can archived items come back?" | Needs a decision | "archived" means hidden in R3, deleted in R5 |
 ```
 
@@ -161,7 +172,7 @@ Then three buckets, one line per item:
 
 - **Exists** — works already, or has a ticket whose premise holds.
 - **Missing** — new ticket, or a scope line to add.
-- **Needs a data step** — and who runs it.
+- **Needs a data step** — its kind (deploy / config / data repair / manual), and who runs it.
 
 Then the decisions to surface, the remarks you could not verify, and the unanswered earlier
 asks from §1. Full per-remark detail only when the user asks for it.
@@ -175,6 +186,7 @@ Present the proposed tracker changes as one list and wait. On approval:
 - **Append to existing tickets**: the scope line and the DoD line, with a link to the
   source remark. Do not rewrite the rest of the body — a stale body is `ticket-refresh`'s.
 - **Mark a superseded duplicate** abandoned, with a pointer to the ticket that survives.
+- **Run `ticket-refresh`** on each ticket §4 marked *stale premise* and the user approved.
 - **Do not move any other status.** A status the user didn't name stays where it is.
 
 ### 8. Draft the reply
