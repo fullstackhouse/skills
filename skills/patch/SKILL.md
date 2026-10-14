@@ -1,6 +1,6 @@
 ---
 name: patch
-description: Decide what to do about a bug or missing behaviour in a dependency: patch locally only when no channel you can install already carries the fix, and record it in the repo's patch index with the condition under which it may be deleted. Read this BEFORE writing any local code that compensates for a dependency — wrapping its function, re-registering what it got wrong, matching its error text, pinning around it. Use for "patch in <PR link>", "apply that fix locally", "we can't wait for the release", and whenever the plan is to work around, monkey-patch, shim or hack around a library, framework or SDK; the skill refuses the workaround and names the installable fix instead. `--audit` reads the index back and says, per patch, whether a version bump may now drop it. Args: a PR/commit/diff link, or `--audit`.
+description: Carry a dependency's unreleased change in this repo as a local patch, and record it in the repo's patch index — what it changes, where it came from, and the condition under which it may be deleted. Refuses when a channel you can install already carries the fix, and names the bump instead. Use when asked to "patch in <PR link>", "apply that fix locally", "we can't wait for the release" — and before working around a dependency in your own code instead: a wrapper that corrects its output, a re-registration, an error-text match, a monkey-patch or shim. Or when the index itself needs reading: `--audit` says, per patch, whether a version bump may now drop it. Args: a PR/commit/diff link, or `--audit`.
 ---
 
 # patch
@@ -31,9 +31,6 @@ same bug down another path stays broken; and when the thing that broke was a **g
 validation, a check the dependency performs on your behalf — a symptom-level repair can report
 success with the protection off. When no channel carries the fix, the honest options are this skill
 or waiting. Not a repair in your own code.
-
-*(The reasoning in full: "Writing Mature Software" §15.8, book.fullstack.house — FSH-internal and
-Access-gated, so it is a pointer for people, not a page to fetch.)*
 
 ## Apply
 
