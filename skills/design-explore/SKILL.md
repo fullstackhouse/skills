@@ -32,6 +32,9 @@ Divergent counterpart to `/design-polish`. Don't fix the current design — ques
 - **Business rules beat layout.** An edit affordance on an immutable state (e.g. a released revision), a delete where the domain demands archive, or a total that silently excludes something (e.g. external lead time) is a design bug even if it looks clean. Variants must surface lifecycle: what's editable now, what path changes locked data (new revision / correction document), and flag derived values that can mislead.
 - **Working > described.** A rendered screenshot beats a paragraph; users can't judge prose mockups.
 - **User picks, not you.** Never auto-merge a variant; present, recommend, and stop.
+- **Variants cannot settle a domain question.** If the screen's data cannot be written out
+  as concrete sourced rows — a field needs a mechanism nobody has decided — three variants are
+  three guesses. Stop and run `design-phase`; it routes to `design-model`.
 
 ## Output format
 

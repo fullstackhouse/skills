@@ -5,6 +5,10 @@ description: Audit and improve the visual design and UX of a web app/prototype u
 
 # Design Polish
 
+For an existing UI whose *job* is settled and whose data is real. When the screen is still
+being invented, or the open questions are about what a field is, `design-phase` routes the
+phase instead — polishing a screen built on an undecided model moves the pixels twice.
+
 Improve an existing UI iteratively: **see it → audit it → fix the highest-impact issues → verify visually**. Never restyle blindly from code alone.
 
 ## Workflow
