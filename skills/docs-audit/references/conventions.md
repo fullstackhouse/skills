@@ -111,6 +111,18 @@ unreachable, including the "never do X" rules at the bottom of the file.
 file; long-form procedure, tables of options and worked examples move into a referenced
 document the agent reads on demand.
 
+**One exception, and it is the part that gets lost: a warning's headline stays behind.** Some
+of what a doc holds is not procedure but a *false signal* — an endpoint that answers `{ok:true}`
+whatever happened, a health badge that is red on a working service, a setting whose fix in the
+UI is overwritten on the next deploy. Those are met while already debugging something else, and
+nobody who is staring at a red badge thinks to open the routed document that explains it. A
+router row cannot deliver them.
+
+So when such a passage moves, leave a one-line headline in the root — what you see, what is
+actually true, and where the explanation is. A short table is enough, and the arithmetic
+favours it heavily: in one measured case four headlines cost 450 B and let 8 KB of explanation
+leave the root, while keeping the only part that pays off unprompted.
+
 ### 2.3 Structure
 
 The root doc, in this order:
@@ -140,6 +152,17 @@ vocabulary, spec location, reviewer bot, merge policy, status channel and audien
 knobs are listed in this repo's README.
 
 The test of a good profile: a skill invoked in a fresh session asks the user nothing.
+
+**Derive each value from the whole repository, not from the file you expect it in.** The tracker
+is where this goes wrong: a board is as likely to be named in `README.md`, a `docs/` index or a
+`CONTRIBUTING.md` as in the agent doc, so grep the tree for the candidates — a tracker product
+name, an issue URL, a board — before concluding a repo has none. A profile that says *no
+tracker* when one exists is worse than a missing field: a skill that would have asked now
+confidently does the wrong thing. In one measured case the board was named in `README.md` and
+nowhere else, and two files were checked instead of the tree.
+
+Record the status vocabulary in order, not just the tracker's location, and the identifier a
+query actually needs — a database or data-source id, not only a human URL.
 
 ### 2.5 Staleness
 
