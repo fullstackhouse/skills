@@ -58,7 +58,7 @@ One question decides most rows: **does this job build, run or test the app, and 
 - Short, and neither builds nor runs the app: the branch-protection required check, `if: always()` joiners, `notify-failure`, PR commenters, `paths-filter` jobs, cancel-workflows, labelers, deployment bookkeeping, config computation. Seconds of runtime, so nothing to gain — and the merge gate in particular should sit on the most boring infrastructure available.
 - Waits on an external system: `kubectl rollout status`, Cloud Run deploys, health checks, cron pollers. Faster cores buy nothing, and there is no reason to hand a third-party runner the cluster kubeconfig for no gain.
 - `self-hosted` or an unknown custom label. It is on that hardware for a reason — cluster LAN, on-disk kubeconfig.
-- Machine-local or network-scoped credentials: `KUBECONFIG` pointing at a file on the runner, a WireGuard peer config, SSH to a host that allowlists the runner's IP.
+- Machine-local or network-scoped credentials: `KUBECONFIG` pointing at a file on the runner, a WireGuard or tailscale/headscale join into someone's LAN, SSH to a host that allowlists the runner's IP. The LAN case is the one that gets missed: the job looks like an ordinary e2e suite, and the route it opens is the client's network.
 - **A self-triggering workflow that has been dormant** (lists itself in `paths:` and hasn't run in 60+ days — the inventory flags these). Listing itself is normal; dormancy is the problem: your edit runs it for the first time in months, and a pre-existing failure then looks like yours. If it fails on something unrelated to runners, revert that file to byte-identical, report the failure, and don't fix it here — not even with a comment in the file, because the comment is an edit and re-fires it.
 
 **Ask once**, in a single `AskUserQuestion`, with the numbers beside each item:
@@ -99,21 +99,35 @@ One question decides most rows: **does this job build, run or test the app, and 
         uses: useblacksmith/build-push-action@v2
         with:            # context, file, target, push, tags, build-args, platforms: unchanged
 
-      # Bounds what the sticky disk carries into the next run (billed per GB-month).
-      # Runs before the disk is committed at job end. Never fails the job: an uncapped
-      # cache costs money, not correctness.
+      # Bounds what the sticky disk carries into the next run (billed per GB-month) and
+      # leaves both sizes in the job summary, so the cap is checkable from the run instead
+      # of the vendor's dashboard. Runs before the disk is committed at job end, and only
+      # after a successful build — a failed build leaves one run's worth behind, which the
+      # next successful build prunes. Never fails the job: an uncapped cache costs money,
+      # not correctness.
       - name: Cap the Docker layer cache
         continue-on-error: true
+        timeout-minutes: 5
         run: |
+          set -euo pipefail
+          size() { docker buildx du | tail -2 | sed 's/^/    /'; }   # Reclaimable, Total
+          before=$(size)
+          # 30 decimal GB spelled in bytes: buildx reads a `30gb` suffix as 30 GiB.
           # --max-used-space needs buildx 0.17+ (the builder action ships 0.23). On an
           # older pin, fall back to the deprecated --keep-storage and say so.
-          docker buildx prune --force --max-used-space 20gb \
-            || { echo "::warning::buildx prune --max-used-space unsupported; using --keep-storage"; docker buildx prune --force --keep-storage 20gb; }
+          if ! pruned=$(docker buildx prune --force --max-used-space 30000000000 2>&1); then
+            echo "::warning::buildx prune --max-used-space unsupported; using --keep-storage"
+            pruned=$(docker buildx prune --force --keep-storage 30000000000 2>&1)
+          fi
+          printf '### Docker layer cache\nBefore:\n%s\nPruned: %s\nAfter:\n%s\n' \
+            "$before" "$(echo "$pruned" | tail -1)" "$(size)" >> "$GITHUB_STEP_SUMMARY"
 ```
 
 **`cache-key`** names one sticky disk. Make it one per Dockerfile + target, shared by every workflow and environment that builds it — preview, dev and prod builds of one Dockerfile differ only in build args, so they share every install layer, and a PR build starts from the layers `main` left. Never a deploy name: a per-PR image name (`app-pr-123`) mints one disk per PR, each starting cold and each billed. Two genuinely different images get two keys.
 
-**Size cap.** `setup-docker-builder@v2` has no size input (v1's `max-cache-size-mb` is gone; v2 garbage-collects by age only), and storage is what turned one month's bill up 25%. The prune step above holds the disk under 20 GB; one full cold build of a Node app left 12.4 GB, so 20 GB keeps roughly a full set plus the last change. Raise it per image if `build-steps.sh` shows installs re-running after a prune.
+**Size cap.** `setup-docker-builder@v2` has no size input (v1's `max-cache-size-mb` is gone; v2 garbage-collects by age only), and storage is what turned one month's bill up 25%: $205 of sticky disk inside a $425 invoice, 277 GB retained across three keys that all looked active. **30 decimal GB is the house number** — one full cold build of a Node app leaves 12.4 GB, so it keeps a set plus the last change, and it is what the capped repos run today. `--max-used-space` is a target for *reclaimable* cache, not a promise about disk size: the capped repo reads 28.75 GB on attach, 32.04 after a build, 28.1 after the prune. Raise it per image if `build-steps.sh` shows installs re-running after a prune.
+
+**Cadence decides whether the disk is worth anything.** Blacksmith evicts layers that go unused — documented at 8 days, observed at 72 h in a job log. A repo that builds an image less often than that is cold on *every* build: it keeps the hardware gain, the cache gains nothing, and the disk bills only for the days it survives in between. One repo whose image builds land days to weeks apart reported `cached=0` on three consecutive builds across three images, and never appeared in the paid-storage inventory. So: run `build-steps.sh` on two consecutive real builds before promising cache gains in the PR, and skip the size cap where nothing accumulates to cap. What is left on such a repo is the cold build itself — the two bloat items in the Dockerfile audit below are then the only lever.
 
 **"Free runner disk space" steps** (`rm -rf /usr/share/dotnet …`, `docker system prune -af`) existed for GitHub's 14 GB root disk. With the sticky-disk builder, BuildKit writes to its own disk, not the root disk, and the root disk on a 2-vCPU runner had 80 GB free. Keeping the step is harmless — 0.2 min on Blacksmith against 2.4 on GitHub — but it guards nothing in a job that builds through `setup-docker-builder`; drop it there, keep it where a job still builds through the local daemon. Multi-platform builds: one job per platform on the matching runner (`…-arm` for arm64), no QEMU.
 
@@ -121,6 +135,8 @@ One question decides most rows: **does this job build, run or test the app, and 
 
 - **Per-commit `ARG`s go last.** A changed `ARG` value misses the cache at every `RUN` *after* its declaration, used or not. An `ARG GIT_SHA` / `RELEASE` / `VERSION` near the top of a stage re-runs that stage's dependency install on every commit. Declare it immediately before its first use, ideally as the stage's last instructions.
 - **Package caches in cache mounts, not layers.** Replace `RUN yarn install && yarn cache clean` (or `npm ci && npm cache clean`, `pip install --no-cache-dir`) with `RUN --mount=type=cache,target=<the tool's cache dir> <install>`. Confirm the dir in the base image (`yarn config get cacheFolder` — Yarn 4: `/root/.yarn/berry/cache`). Cache mounts live on the sticky disk too, so a lockfile change re-links from disk instead of downloading everything.
+- **Nothing the runtime doesn't need, in the stage that ships.** Compiler and bundler caches written during the build (`.next/cache/turbopack`, `.turbo`, `.vite`, `__pycache__`) are COPYd into the final image unless the build deletes them in the same `RUN`. They are paid for twice: in the registry push, and in every pull.
+- **Never `chown -R` a tree you just copied.** `RUN adduser … && chown -R app:app /app` rewrites every file into a new layer, so the image carries a second copy of node_modules and the build output — 44-47 s per build in two repos, before the larger push it causes. Create the user before the content lands and use `COPY --chown=` / `COPY --from=builder --chown=`; chown one path only if something genuinely must be writable.
 - **Know what the old cache never held.** `cache-to: …,mode=min` exports only the final stage's layers, so builder stages were always rebuilt; `docker build --cache-from <image>:latest` reuses nothing unless that image was pushed with inline cache metadata. Either way the "before" was a cold build, and the baseline says so.
 
 Each fix is an ordinary Dockerfile change that helps on any runner; it ships in this PR because the cache is the point of the migration. `build-steps.sh` on the second warm build is the proof: install steps `CACHED`.
@@ -136,7 +152,7 @@ Each fix is an ordinary Dockerfile change that helps on any runner; it ships in 
 
 **Dependency caches in CI jobs.** Where a test job has none, adding one is fine (see Don't). One trap: `actions/setup-node`'s `cache: yarn` runs before `corepack enable`, so it asks the runner's preinstalled Yarn 1 for its folder and caches the wrong directory. For Yarn 2+, use `actions/cache` on `~/.yarn/berry/cache` keyed on the lockfile(s).
 
-**Every migrated job gets `timeout-minutes`** if it lacks one. A stuck VM on either vendor otherwise burns GitHub's 6-hour default. Value: 1.5 × the slowest run in the baseline, rounded up, minimum 10.
+**Every migrated job gets `timeout-minutes`** if it lacks one. A stuck VM on either vendor otherwise burns GitHub's 6-hour default. Value: 1.5 × the slowest *healthy* run in the baseline, rounded up, minimum 10 — not the slowest run outright, which may be the very stall you are removing.
 
 **`.github/actionlint.yaml`** from [`templates/actionlint.yaml`](./templates/actionlint.yaml), `{{LABELS}}` = the labels you introduced (one `    - ` line each); no repo has one before this, so create it. actionlint otherwise reads the labels as typos.
 
