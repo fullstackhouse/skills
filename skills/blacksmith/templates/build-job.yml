@@ -1,0 +1,44 @@
+# A fused build + deploy job, split in place: this `build` job goes on Blacksmith, the
+# existing job keeps everything after the image and gains `needs: [build]`. Move the
+# job's `env:` block to the workflow level so both jobs read the same values, and pass
+# the image by its deterministic tag (sha-based), never by a job output that a re-run
+# of the deploy job alone would lose.
+#
+# Placeholders: {{TIMEOUT}} (1.5 × slowest baseline build, rounded up), {{CACHE_KEY}}
+# (one per Dockerfile + target — see SKILL.md), {{REGISTRY_LOGIN_STEPS}} (the job's
+# existing cloud-auth + registry-login steps, copied unchanged), {{BUILD_INPUTS}} (the
+# old build step's context/file/target/tags/build-args/secrets, minus cache-from/to).
+  build:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: {{TIMEOUT}}
+    permissions:
+      contents: read
+      id-token: write     # only if the registry login uses OIDC / workload identity
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+{{REGISTRY_LOGIN_STEPS}}
+
+      # Mounts the org's sticky disk as the buildkit layer store, so a restore is a
+      # local NVMe read rather than a registry pull. `cache-key` is a constant per
+      # Dockerfile + target, shared by every environment that builds it; buildkit
+      # invalidates layers itself.
+      - name: Set up Docker Buildx (Blacksmith sticky disk)
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: {{CACHE_KEY}}
+
+      # No cache-from/cache-to: the sticky disk replaces them.
+      - name: Build and push image
+        uses: useblacksmith/build-push-action@v2
+        with:
+{{BUILD_INPUTS}}
+
+      # Bounds what the sticky disk carries into the next run (billed per GB-month).
+      # Runs before the disk is committed at job end. Never fails the job: an uncapped
+      # cache costs money, not correctness.
+      - name: Cap the Docker layer cache
+        continue-on-error: true
+        run: docker buildx prune --force --max-used-space 20gb
