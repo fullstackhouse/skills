@@ -30,16 +30,26 @@ while [ $# -gt 0 ]; do
     --since) SINCE="$2"; shift 2 ;;
     --min-seconds) MIN_SECONDS="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
-    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^set -e/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 [ -n "$WF" ] || { echo "--workflow is required" >&2; exit 1; }
 [ -n "$REPO" ] || REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
-query="/repos/$REPO/actions/workflows/$WF/runs?per_page=$RUNS&status=success&created=>$SINCE"
+query="/repos/$REPO/actions/workflows/$WF/runs?status=success&created=>$SINCE"
 [ -z "$BRANCH" ] || query="$query&branch=$BRANCH"
-run_ids=$(gh api "$query" -q '.workflow_runs[].id' | head -"$RUNS")
+# The API caps per_page at 100, so page until --runs ids are in hand (or runs run out).
+per_page=$(( RUNS < 100 ? RUNS : 100 ))
+run_ids=""
+page=1
+while [ "$(printf '%s' "$run_ids" | grep -c .)" -lt "$RUNS" ]; do
+  got=$(gh api "$query&per_page=$per_page&page=$page" -q '.workflow_runs[].id')
+  [ -n "$got" ] || break
+  run_ids=$(printf '%s\n%s\n' "$run_ids" "$got" | grep .)
+  page=$((page + 1))
+done
+run_ids=$(printf '%s\n' "$run_ids" | awk -v n="$RUNS" 'NF && NR <= n')
 [ -n "$run_ids" ] || { echo "no successful runs of $WF since $SINCE" >&2; exit 1; }
 
 tmp=$(mktemp)

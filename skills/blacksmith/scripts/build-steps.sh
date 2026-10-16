@@ -27,7 +27,7 @@ while [ $# -gt 0 ]; do
     --job) JOB_NAME="$2"; shift 2 ;;
     --top) TOP="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^set -e/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -48,9 +48,13 @@ gh api --allow-escape-sequences "/repos/$REPO/actions/jobs/$JOB_ID/logs" \
       # A step id first appears with its name ("#20 [builder 10/10] RUN yarn build",
       # "#31 exporting to image"); later lines are output ("#20 85.94 ...") or a
       # terminal state ("#20 DONE 366.8s", "#20 CACHED", "#20 ERROR: ...").
+      # BuildKit numbers steps from #1 again for every build, and each build opens
+      # with "#0 building with ... instance", so steps are keyed by build and id —
+      # otherwise a job with two builds mixes their states.
       /ENOSPC|no space left on device/ { enospc++ }
+      /^#0 building with / { builds++; next }
       match($0, /^#[0-9]+ /) {
-        id = substr($1, 2); rest = substr($0, RLENGTH + 1)
+        id = (builds + 0) ":" substr($1, 2); rest = substr($0, RLENGTH + 1)
         if (rest ~ /^CACHED/) { state[id] = "CACHED"; next }
         if (rest ~ /^DONE [0-9.]+s/) { split(rest, p, " "); secs[id] = p[2] + 0; if (!(id in state)) state[id] = "ran"; next }
         if (rest ~ /^ERROR/) { state[id] = "ERROR"; next }
@@ -62,17 +66,18 @@ gh api --allow-escape-sequences "/repos/$REPO/actions/jobs/$JOB_ID/logs" \
         for (i = 1; i <= k; i++) {
           id = ids[i]
           if (state[id] == "CACHED") cached++; else if (id in secs) ran++
-          line[i] = sprintf("%9.1f  %-7s %s", secs[id] + 0, (id in state) ? state[id] : "-", substr(name[id], 1, 110))
+          label[id] = (builds > 1) ? "[build " substr(id, 1, index(id, ":") - 1) "] " name[id] : name[id]
+          line[i] = sprintf("%9.1f  %-7s %s", secs[id] + 0, (id in state) ? state[id] : "-", substr(label[id], 1, 110))
           s[i] = secs[id] + 0
         }
         # Slowest first (selection sort; a build has tens of steps, not thousands).
         for (i = 1; i <= k; i++) { m = i; for (j = i + 1; j <= k; j++) if (s[j] > s[m]) m = j
           t = s[i]; s[i] = s[m]; s[m] = t; t = line[i]; line[i] = line[m]; line[m] = t }
-        printf "steps=%d  cached=%d  ran=%d  enospc=%d\n\n%9s  %-7s %s\n", k, cached, ran, enospc + 0, "SECONDS", "STATE", "STEP"
+        printf "builds=%d  steps=%d  cached=%d  ran=%d  enospc=%d\n\n%9s  %-7s %s\n", builds + 0, k, cached, ran, enospc + 0, "SECONDS", "STATE", "STEP"
         for (i = 1; i <= k && i <= top; i++) print line[i]
         # Dependency installs are the steps that must come back CACHED on a warm build.
         printf "\ninstall steps:\n"
         for (i = 1; i <= k; i++) { id = ids[i]
           if (name[id] ~ /RUN.*(yarn( workspaces focus| install)|npm (ci|install)|pnpm install|bun install|pip install|poetry install|uv sync|bundle install|go mod download|cargo fetch)/)
-            printf "%9.1f  %-7s %s\n", secs[id] + 0, (id in state) ? state[id] : "-", substr(name[id], 1, 110) }
+            printf "%9.1f  %-7s %s\n", secs[id] + 0, (id in state) ? state[id] : "-", substr(label[id], 1, 110) }
       }'

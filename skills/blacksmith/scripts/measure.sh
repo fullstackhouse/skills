@@ -117,6 +117,8 @@ while [ "$i" -lt $((START + RUNS)) ]; do
   [ -n "$run_id" ] || { echo "STOP $LABEL $i: no $WF run for $sha" >&2; exit 1; }
 
   conclusion=$(wait_completed "$run_id")
+  # A timed-out run is still in progress: re-running it would error, so stop here.
+  [ "$conclusion" != "timeout" ] || { echo "STOP $LABEL $i: run $run_id still running after ${MAX_WAIT_MIN} min" >&2; exit 1; }
   rerun=0
   if [ "$conclusion" != "success" ]; then
     b=$(gh api "/repos/$REPO/actions/runs/$run_id/jobs?per_page=100" -q ".jobs[] | select(.name == \"$BUILD_JOB\") | .conclusion" | head -1)
@@ -125,6 +127,7 @@ while [ "$i" -lt $((START + RUNS)) ]; do
       gh run rerun "$run_id" --failed --repo "$REPO" >/dev/null
       sleep "$POLL"
       conclusion=$(wait_completed "$run_id")
+      [ "$conclusion" != "timeout" ] || { echo "STOP $LABEL $i: re-run of $run_id still running after ${MAX_WAIT_MIN} min" >&2; exit 1; }
       rerun=1
     fi
   fi

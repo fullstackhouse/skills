@@ -104,7 +104,11 @@ One question decides most rows: **does this job build, run or test the app, and 
       # cache costs money, not correctness.
       - name: Cap the Docker layer cache
         continue-on-error: true
-        run: docker buildx prune --force --max-used-space 20gb
+        run: |
+          # --max-used-space needs buildx 0.17+ (the builder action ships 0.23). On an
+          # older pin, fall back to the deprecated --keep-storage and say so.
+          docker buildx prune --force --max-used-space 20gb \
+            || { echo "::warning::buildx prune --max-used-space unsupported; using --keep-storage"; docker buildx prune --force --keep-storage 20gb; }
 ```
 
 **`cache-key`** names one sticky disk. Make it one per Dockerfile + target, shared by every workflow and environment that builds it — preview, dev and prod builds of one Dockerfile differ only in build args, so they share every install layer, and a PR build starts from the layers `main` left. Never a deploy name: a per-PR image name (`app-pr-123`) mints one disk per PR, each starting cold and each billed. Two genuinely different images get two keys.

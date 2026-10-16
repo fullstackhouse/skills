@@ -41,4 +41,8 @@
       # cache costs money, not correctness.
       - name: Cap the Docker layer cache
         continue-on-error: true
-        run: docker buildx prune --force --max-used-space 20gb
+        run: |
+          # --max-used-space needs buildx 0.17+ (the builder action ships 0.23). On an
+          # older pin, fall back to the deprecated --keep-storage and say so.
+          docker buildx prune --force --max-used-space 20gb \
+            || { echo "::warning::buildx prune --max-used-space unsupported; using --keep-storage"; docker buildx prune --force --keep-storage 20gb; }
