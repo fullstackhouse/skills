@@ -1,6 +1,6 @@
 ---
 name: blacksmith
-description: Migrate a repository's GitHub Actions workflows to Blacksmith runners — inventory every job, move the ones that build, run or test the app (image builds get the sticky-disk Docker actions, a size-capped cache and a Dockerfile audit for cache killers), leave glue, deploy and credential-bound jobs on GitHub, capture a per-step timing baseline, hand off to `deliver --no-merge` with the decision table in the PR, and measure real rebuilds on that PR before it merges. Use when asked to "move CI to Blacksmith", "cut GitHub Actions spend", "make the image build faster", or right after the Blacksmith app was installed on an org. Args: a repo path (default: the current repo), plus `--audit-only` to print the decision table and write nothing.
+description: Migrate a repository's GitHub Actions workflows to Blacksmith runners — inventory every job, move the ones that build, run or test the app (image builds get the sticky-disk Docker actions, a size-capped cache and a Dockerfile audit for cache killers), leave glue, deploy and credential-bound jobs on GitHub, capture a per-step timing baseline, hand off to `deliver --no-merge` with the decision table in the PR, and measure real rebuilds on that PR when the existing runs can't settle it. Use when asked to "move CI to Blacksmith", "cut GitHub Actions spend", "make the image build faster", or right after the Blacksmith app was installed on an org. Args: a repo path (default: the current repo), plus `--audit-only` to print the decision table and write nothing.
 ---
 
 # blacksmith
@@ -177,13 +177,16 @@ grep -rn 'cache-from\|cache-to' .github/workflows            # none left on migr
 grep -rn 'runs-on:' .github/workflows | grep -v blacksmith   # exactly the "stay" rows
 git diff --stat                                              # exactly the "migrate" files (+ actionlint.yaml)
 git diff --quiet -- <every dormant workflow left alone>       # byte-identical
+# If you push-measured (Phase 5): the perturbation file and its commits are gone again.
+git log --oneline "origin/$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)..HEAD" \
+  | grep -ci 'measurement rebuild'                           # 0
 ```
 
 The diff must reconcile with the decision table line for line. A file in the diff that isn't in the table, or vice versa, is a mistake — find it before delivering. A new actionlint line is acceptable only when it is an existing finding carried into a copied step (a split job repeating a `>> $GITHUB_ENV` step) — say so in the PR.
 
 ## 5. Deliver and watch
 
-Hand off with `/deliver --no-merge`. When an image build moved and a PR-triggered workflow builds it (a preview deploy, a PR image build), measure on the PR before it merges — the "after" then exists at review time instead of a week later:
+Hand off with `/deliver --no-merge`. The "after" normally comes from runs that happen anyway: re-run `ci-timing.sh` and `step-timing.sh` a week later and compare per job and per step, n ≥ 5. **Push-measure on the PR only when that cannot answer the question** — the Dockerfile audit changed something and the install states have to prove it, or the repo builds too rarely to accumulate a comparable sample. Each run is a real build and, on a fused or preview-deploying workflow, a real deployment: five runs is five of those, plus any re-runs. In a repo we don't own, ask before pushing them. When you do measure:
 
 ```bash
 M="${CLAUDE_SKILL_DIR}/scripts/measure.sh"
