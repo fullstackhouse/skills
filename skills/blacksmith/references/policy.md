@@ -1,6 +1,6 @@
 # Why the policy is what it is
 
-Measured on one FSH monorepo, September 2026: four Docker images, eleven test/e2e workflows,
+Measured on two repos. The first, an FSH monorepo, September 2026: four Docker images, eleven test/e2e workflows,
 ~30k job-minutes a month. Every "after" below is on the same vCPU count as its "before".
 
 ## The mechanism
@@ -47,6 +47,49 @@ one sample against 25 runs, then "−29%" once a second sample landed below the 
 The two Blacksmith samples themselves spanned 4.8–6.1 min — 27% between them. Judge on n ≥ 5,
 each job against its own history.
 
+## A second repo: when the cache was never working
+
+October 2026, a Node monorepo: one Dockerfile built for preview, dev and prod at 2 vCPU, test
+and e2e jobs at 2 vCPU. Measured on preview deploys, which push-trigger on a PR, with a one-line
+change inside the build context per run, n=5 per series, before the PR merged:
+
+| Preview deploy, end to end | Median | Image build |
+|---|---:|---:|
+| GitHub-hosted, registry cache — baseline, n=25 | 23.8 min | 18.5 ¹ |
+| Blacksmith, sticky disk, cold | 16.2 | 10.5 |
+| Blacksmith, warm, Dockerfile fixed | 14.2 | 9.3 |
+| … and the disk-cleanup step removed | 14.9 | 9.4 |
+| … and the source-map upload skipped | **10.5** | **4.3** |
+
+¹ Build and deploy were one job; this is the time to a pushed image.
+
+What that run taught:
+
+- **The Dockerfile was the cache's real enemy.** `ARG GIT_SHA` near the top of the runtime stage
+  missed the cache at every later `RUN`, so the production install (156 s) re-ran on every
+  commit. `cache-to: mode=min` never stored the builder stage, so its install (168 s) re-ran
+  too, and one workflow's `--cache-from :latest` reused nothing at all — the image carried no
+  cache metadata. The "before" was a cold build every time. Moving the `ARG` to the end of the
+  stage and putting the package cache in a `--mount=type=cache` brought every install step
+  back `CACHED` on 15 of 15 warm runs.
+- **The disk-cleanup step guards nothing on the sticky-disk builder.** 0.2 min on Blacksmith
+  (2.4 on GitHub); without it the 2-vCPU runner's root disk still had 80 GB free after the build,
+  because BuildKit writes to the sticky disk. The A/B difference sat inside run-to-run noise.
+- **The biggest remaining cost wasn't compute.** A source-map upload inside `next build` — 4,020
+  files in 75 sequential batches — took 75% of the build step. Skipping it for previews saved
+  another 4.4 min, almost half of what the runner and the cache fixes saved together.
+  `build-steps.sh` exists because this was invisible in every workflow-level number.
+- **Disk size:** one cold build left 12.4 GB on the sticky disk; a 20 GB prune cap held it
+  under 19 GB across 16 builds.
+- **Registry push** ("exporting to image") is now the largest fixed cost of the build at
+  90–100 s; a smaller runtime image is the next lever, not a faster runner.
+- **Measuring finds things.** Recreating one preview environment every 15 minutes exposed a
+  pre-existing race in its database reset (2 of 16 deploys). The build numbers were kept, the
+  deploy jobs re-run, and the race fixed in its own PR.
+
+CI jobs on the same pushes, same vCPU: tests with service containers 8.1 → 4.3 min (−47%),
+browser e2e 16.8 → 11.0 min (−35%), n=15 against n=15.
+
 ## Rates
 
 Blacksmith bills linear in vCPU off a $0.004 base; GitHub's larger runners are priced steeper
@@ -77,7 +120,13 @@ idle; 3,000 free minutes a month.
 ## Vendor facts worth knowing
 
 - The GitHub App must be installed on the org; without it `blacksmith-*` jobs queue until GitHub
-  times them out. Check `gh api /orgs/<org>/installations`.
+  times them out. Check `gh api /orgs/<org>/installations` — it needs `admin:org`, and returns
+  404 without it, which proves nothing. A job picked up in seconds proves the app works.
+- `useblacksmith/setup-docker-builder@v2` has no cache-size input (v1's `max-cache-size-mb` was
+  dropped) and garbage-collects by age only; cap size with `docker buildx prune
+  --max-used-space` before the job ends.
+- A 2-vCPU Ubuntu runner: 150 GB root disk with ~80 GB free; the Docker sticky disk mounts
+  separately at `/var/lib/buildkit` (~590 GB).
 - `actions/cache` and `setup-*` caching are intercepted transparently; `useblacksmith/cache` is
   deprecated. Cache is scoped per branch like GitHub's, 25 GB/repo/week free.
 - The Docker layer cache is a sticky disk per `cache-key`, shared across the org's runners;
