@@ -39,11 +39,17 @@ if [ -z "$JOB_ID" ]; then
   [ -n "$JOB_ID" ] || { echo "no job named '$JOB_NAME' in run $RUN_ID" >&2; exit 1; }
 fi
 
-# Job logs carry ANSI colour codes; gh refuses to print them without the flag. BSD sed
-# has no \x1b escape, so the ESC byte goes in literally.
+# Job logs carry ANSI colour codes. gh guards escape sequences only when stdout is a
+# terminal, and this always pipes, so no flag is needed — and `--allow-escape-sequences`
+# would be an "unknown flag" error on gh older than 2.102. Fetch first, so an expired or
+# unreadable log says so instead of parsing as a build with no steps. BSD sed has no
+# \x1b escape, so the ESC byte goes in literally.
+log=$(mktemp); trap 'rm -f "$log"' EXIT
+gh api "/repos/$REPO/actions/jobs/$JOB_ID/logs" > "$log" \
+  || { echo "could not read the log for job $JOB_ID (expired, or no access)" >&2; exit 1; }
+[ -s "$log" ] || { echo "the log for job $JOB_ID is empty" >&2; exit 1; }
 esc=$(printf '\033')
-gh api --allow-escape-sequences "/repos/$REPO/actions/jobs/$JOB_ID/logs" \
-  | sed -E "s/${esc}\[[0-9;]*m//g; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //" \
+sed -E "s/${esc}\[[0-9;]*m//g; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //" "$log" \
   | awk -v top="$TOP" '
       # A step id first appears with its name ("#20 [builder 10/10] RUN yarn build",
       # "#31 exporting to image"); later lines are output ("#20 85.94 ...") or a

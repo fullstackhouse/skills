@@ -90,6 +90,38 @@ What that run taught:
 CI jobs on the same pushes, same vCPU: tests with service containers 8.1 → 4.3 min (−47%),
 browser e2e 16.8 → 11.0 min (−35%), n=15 against n=15.
 
+## What it cost: the bill, one month in
+
+October 2026, measured on the two migrated repos against the month before the migration. Every
+migrated job had got faster; the invoice had not.
+
+| Net CI charges, storage and credits included | Before | After |
+|---|---:|---:|
+| GitHub Actions + registry | $640 | $379 |
+| Blacksmith (incl. $205 storage, $24 credits) | $0 | $425 |
+| **All in** | **$640** | **$804** |
+
+- **Storage was the whole surprise.** 277 GB retained across three cache keys, all of them used
+  within the hour, none bounded by anything: the GC is by age, not size. At $0.50/GB/month that
+  is $138 a month of steady state, and it is why the all-in bill rose 25% in a month where every
+  job ran faster. Compute alone would have read as a win.
+- **Capping worked, and is visible per run.** A `docker buildx prune --max-used-space` step at
+  30 GB took the busiest key from 143 GB to 27 GB and has held it there: two weeks later a build
+  reads 28.75 GB on attach, 32.04 after the build, 28.1 after the prune. The first prune moved
+  128 GB in 94 s; steady-state prunes take ~3 s. Those numbers exist because the step logs
+  `buildx du` before and after into the job summary — without it the only source is the vendor
+  dashboard, and nobody reads that monthly.
+- **Below a certain cadence the disk never warms.** The second repo builds each image days to
+  weeks apart. Three consecutive builds, three different images, `cached=0` on all of them:
+  Blacksmith had evicted the layers in between. That repo gets the hardware gain, nothing from
+  the cache, and never appeared in the paid-storage inventory at all — the eviction that
+  destroys the cache also ends the bill. Measure the cadence before promising cache gains.
+- **Two layer-bloat patterns, in both repos.** A recursive `chown -R` of the copied tree in the
+  final stage — 44-47 s per build and a second copy of node_modules plus the build output in the
+  image — and the bundler's compiler cache COPYd into the runtime image because the build never
+  deleted it. Both are cold-build costs, which makes them the only remaining lever on a repo
+  whose disk never warms.
+
 ## Rates
 
 Blacksmith bills linear in vCPU off a $0.004 base; GitHub's larger runners are priced steeper
@@ -124,7 +156,8 @@ idle; 3,000 free minutes a month.
   404 without it, which proves nothing. A job picked up in seconds proves the app works.
 - `useblacksmith/setup-docker-builder@v2` has no cache-size input (v1's `max-cache-size-mb` was
   dropped) and garbage-collects by age only; cap size with `docker buildx prune
-  --max-used-space` before the job ends.
+  --max-used-space` before the job ends. The age policy is documented as 8 days unused; a job
+  log showed it running at 72 h, so treat an image built less often than that as always cold.
 - A 2-vCPU Ubuntu runner: 150 GB root disk with ~80 GB free; the Docker sticky disk mounts
   separately at `/var/lib/buildkit` (~590 GB).
 - `actions/cache` and `setup-*` caching are intercepted transparently; `useblacksmith/cache` is
