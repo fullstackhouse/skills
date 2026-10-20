@@ -51,25 +51,40 @@ Collect search terms:
   Notion, Jira); else GitHub issues. PRs always live on the code host — search them too.
 - A tracker you can't reach (MCP unauthenticated, no access): say which, and search the rest.
 
-## 3. Search — exact and fuzzy, all states
+## 3. Search — meaning first, then exact strings, all states
 
-Run at least two queries per place: one on a verbatim string, one on plain wording.
-**Include closed and merged** — a closed issue often holds the answer, the workaround or the
-"won't fix".
+GitHub's default search is **lexical**: every word must appear, so a reporter's different
+wording or an error code you didn't type hides the issue. Run three kinds of query per
+place, and **include closed and merged**: a closed issue often holds the answer, the
+workaround, or the "won't fix".
 
-GitHub:
+1. **Hybrid (semantic + keyword) on plain wording.** This is the main query. `gh search`
+   can't do it; call the API:
 
-```sh
-gh search issues --repo <owner/repo> --include-prs --limit 20 \
-  --json number,title,state,isPullRequest,url,updatedAt '"<exact error text>"'
-gh search issues --repo <owner/repo> --include-prs --limit 20 \
-  --json number,title,state,isPullRequest,url,updatedAt '<plain words>'
-gh search prs --repo <owner/repo> --limit 20 --json number,title,state,url '<symbol or term>'
-```
+   ```sh
+   gh api -X GET search/issues -f search_type=hybrid -f per_page=10 \
+     -f q='repo:<owner/repo> is:issue <plain description of the problem>' \
+     --jq '.search_type, (.items[] | "#\(.number) [\(.state)] \(.title) \(.html_url)")'
+   ```
 
-Add `in:comments` when a stack trace is likely pasted in a thread. For an org-wide
-search, use `--owner <org>`. Linear/Notion/Jira: their search tool, one query on the
-wording, plus a structured filter (project, label) when the knob names one.
+   Run it again with `is:pr` for PRs. Use `search_type=semantic` when hybrid still pulls in
+   keyword noise. Quotes, `OR`, or a query that is only filters silently drop it back to
+   lexical, and the response's `search_type` field shows which one ran. Limit: 10 req/min.
+2. **Lexical on verbatim strings**, i.e. error codes, symbols, config keys:
+
+   ```sh
+   gh search issues --repo <owner/repo> --include-prs --limit 20 \
+     --json number,title,state,isPullRequest,url '"<exact error text>"'
+   ```
+
+   Add `in:comments` when a stack trace is likely pasted in a thread.
+3. **Web search**, when the repo turns up nothing or you don't know which repo owns the
+   problem: `site:github.com "<error text>"` (other repos, forks, Discussions), then the
+   error text on its own (Stack Overflow, forums, the project's Discourse/Discord archive).
+   It also catches a fix that landed in a *different* project, e.g. a transitive dependency.
+
+Org-wide: `org:<org>` in `q` / `--owner <org>`. Linear/Notion/Jira: their search tool
+on the wording, plus a structured filter (project, label) when the knob names one.
 
 ## 4. Read the hits — never judge by title
 
@@ -94,7 +109,7 @@ then one line per hit, best first:
   <url>
 ```
 
-- **Nothing found** — list the places and the exact queries, so the negative is checkable
+- **Nothing found** — list the places, the exact queries and their search type (hybrid/lexical/web), so the negative is checkable
   and cheap to re-run.
 - **One next step**, suggested not taken: upvote/comment on the match, bump the dependency
   to the release with the fix, carry the unreleased fix locally (`patch`), file new
