@@ -74,9 +74,10 @@ the brief leads with the moves and "leave it" is always found in the same place.
 
 - **Ratify-or-revert items:** the status quo is the change the agent already made, so the
   last option is *keep it* (ratify), after *revert* with its cost.
-- **No status quo exists** (the deadline has passed, the build is broken, a client is
-  waiting on the answer): end the options with `Status quo — not available: <why>`,
-  unlettered.
+- **Leaving it unchanged is impossible**, not merely costly (the API it calls is being
+  shut down, the trial ends either way): end the options with
+  `Status quo — not available: <why>`, unlettered. A deadline, a broken build, or a client
+  waiting on the answer doesn't qualify — that is the status quo's cost of delay; price it.
 
 ### Facts are yours, decisions are theirs
 
@@ -123,8 +124,9 @@ and stop. Say plainly that nothing was decided.
 
 1. **One decision per turn, then stop.** No batching, no previews of the next.
 2. **Never ask what you can measure.** The fact-finding is the work; the question is the output.
-3. **The status quo is the last lettered option**, every time, priced like the others.
-   "Decide nothing" has a cost and a benefit, and it is frequently the right answer.
+3. **The status quo is the last lettered option** whenever leaving it is possible, priced
+   like the others. "Decide nothing" has a cost and a benefit, and it is frequently the
+   right answer.
 4. **Record before advancing.** An answer that only exists in the chat is lost.
 5. **Don't re-open what's settled**, and don't pad the queue to look thorough.
 6. **Recommend.** A survey without a verdict hands the work back to the user, who asked you
