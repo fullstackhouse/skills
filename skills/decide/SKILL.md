@@ -54,9 +54,10 @@ Per decision — headings written in the language the user is writing in:
 **Why it's open** — what raised it, plus what's already true, measured, with the
 source. Not "probably" — the number, and where it came from.
 
-**Options** — 1-2 alternatives that differ in kind, then **the status quo, always last**,
-under its own letter. Each one, the status quo included, with: cost, what it forecloses
-(one-way doors named explicitly), how reversible.
+**Options** — 1-2 alternatives that differ in kind (2-3 when the status quo is not
+available, so there are always at least two letters), then **the status quo, always
+last**, under its own letter. Each one, the status quo included, with: cost, what it
+forecloses (one-way doors named explicitly), how reversible.
 
 ➡️ **Recommendation** — exactly one, with the reason in a sentence.
 
