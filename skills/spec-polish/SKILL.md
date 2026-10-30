@@ -25,6 +25,8 @@ A polish rearranges; it must not launder. Specs cite code, PRs and numbers — e
 - **Spot-check** three to five concrete evidence citations — file paths, function names, constants, line references — against the current tree. Prefer the ones the argument leans on.
 - **Linked artifacts.** Every PR / issue / sibling spec the spec references: does it still exist, and is its state what the spec implies ("waits on #N" ages the day #N merges)?
 
+- **Unmerged dependencies.** When the spec depends on specs still in review, read them and trace the flow through all of them. Each disagreement (one spec's write undoes another's, a route exists in neither) is a contradiction: report it.
+
 Anything contradicted → **stop and report it before restructuring.** Correcting facts is a different job with a different review; do it as a separate, clearly labelled edit only if the user asks, then polish. Never fix a fact *inside* the polish — a reader checking the diff cannot tell a reshape from a retraction.
 
 A spec already in an `implemented/` state (or whose changelog records shipped phases) is history as much as design: restructure its entry, keep the implementation record intact, and append — never rewrite — the changelog.
@@ -41,6 +43,7 @@ Read the entire spec (all parts of a series) before touching anything. Name the 
 - **Template order.** Sections in the order the template lists them rather than the order a reader needs them (data model before the reader knows the problem; risks after the implementation plan). Keep mandated section names; reorder for the reader.
 - **Requirements without alternatives.** Decisions or requirements stated before the reader has seen what they rule out. One line of "instead of" per decision is usually enough.
 - **Review scaffolding left in.** Traceability matrices, compliance checklists, "verified by" notes interleaved with the design. They earned their place; it is at the back.
+- **Process without a picture.** The change spans 2+ modules or an external system, or adds a job, retry or lifecycle, and the reader must assemble the flow from prose. Add Mermaid drawn only from what the spec states: a module map, a sequence of the main path with failures in `alt`, a state diagram for a lifecycle; at most 3, arrows labelled with the real command, event or job. Something the prose does not settle is a question to report, not a guess to draw.
 - **Title drift.** A title that describes the session ("review of X") rather than the document's claim or question.
 
 ## 4. Rewrite
