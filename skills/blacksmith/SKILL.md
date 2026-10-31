@@ -201,13 +201,13 @@ M="${CLAUDE_SKILL_DIR}/scripts/measure.sh"
 - A failure after a green build job (a deploy, a migration) gets one re-run; the build numbers count, end-to-end doesn't. Recreating the same environment every ~15 minutes can wake races a normal PR cadence never hits — report them, fix them elsewhere (hard rule 5).
 - Delete `--file` before review and squash-merge, so the measurement commits never reach the default branch.
 
-PR body, in this order:
+PR body, in the [house format](../pr-polish/references/pr-description.md), carrying these under its sections:
 
-1. **What moved and what stayed** — the decision table, reasons included.
-2. **Baseline** — `ci-timing.sh` and `step-timing.sh` output in fenced blocks, the `measure.sh --summary` table if you measured, plus *how to judge*: re-run the same commands a week after merge; compare per job and step against its own baseline, on n ≥ 5, never on one run. Two in-house samples of the same job spanned 27%.
-3. **What the first run will look like** — the first image build lands on a cold disk and shows only the hardware gain; the second is the number to plan around. A rebuild of an unchanged commit is a no-op that hits every layer, so never quote it as the build time.
-4. **Side effects** — registry `:buildcache` / `:cache` tags are now neither written nor read and can be reaped; deploy-path builds no longer refresh them. A split job creates its deployment record only after a successful build.
-5. **Needs a human** — the "ask" items and their answers; any dormant workflow left alone and why; non-compute build costs `build-steps.sh` named.
+1. **🔧 What moved and what stayed** — the decision table, reasons included.
+2. **🧭 What the first run will look like** — the first image build lands on a cold disk and shows only the hardware gain; the second is the number to plan around. A rebuild of an unchanged commit is a no-op that hits every layer, so never quote it as the build time.
+3. **✅ Baseline** — `ci-timing.sh` and `step-timing.sh` output in fenced blocks, the `measure.sh --summary` table if you measured, plus *how to judge*: re-run the same commands a week after merge; compare per job and step against its own baseline, on n ≥ 5, never on one run. Two in-house samples of the same job spanned 27%.
+4. **⚠️ Side effects** — registry `:buildcache` / `:cache` tags are now neither written nor read and can be reaped; deploy-path builds no longer refresh them. A split job creates its deployment record only after a successful build.
+5. **⚠️ Needs a human** — the "ask" items and their answers; any dormant workflow left alone and why; non-compute build costs `build-steps.sh` named.
 
 After merge, three signals, in order: `blacksmith-*` jobs leave `QUEUED` within a minute (the app works); the service-container test job passes (the environment is drop-in); on the image build's *second* run, `build-steps.sh` shows the install steps `CACHED` (the disk works — "faster than the first run" is too weak a test: it passes on hardware alone while a Dockerfile still misses every layer). If jobs sit in `QUEUED`, the app isn't installed — cancel them rather than let them time out.
 

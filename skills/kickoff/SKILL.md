@@ -42,7 +42,7 @@ For each unknown: if the repo/docs/ticket can answer it, answer it there. If it'
 
 Go **straight to code** when a reviewer wouldn't want a design to react to: the change is small and local, its shape is obvious from the input, and naming the affected areas took no real work.
 
-**Write a spec first** when any of these hold: multiple plausible approaches with different trade-offs; new module/service/schema boundaries; naming the affected areas took actual investigation; or the brief/ticket flags design risk. Put it at the Specs location (see Project specifics) — when that location is the tracker, update the source ticket's body (or post a comment, per the repo's tracker conventions) yourself now; when it's the PR description, carry the plan into the PR body at Phase 5. Keep it lean — problem, chosen approach and the alternative it beat, affected areas, verification plan, recorded assumptions. Carry the brief's Resolved unknowns in verbatim; they are answers, not suggestions.
+**Write a spec first** when any of these hold: multiple plausible approaches with different trade-offs; new module/service/schema boundaries; naming the affected areas took actual investigation; or the brief/ticket flags design risk. Put it at the Specs location (see Project specifics) — when that location is the tracker, update the source ticket's body (or post a comment, per the repo's tracker conventions) yourself now; when it's the PR description, carry the plan into the PR body at Phase 5, its assumptions under ⚠️ Worth knowing. Keep it lean — problem, chosen approach and the alternative it beat, affected areas, verification plan, recorded assumptions. Carry the brief's Resolved unknowns in verbatim; they are answers, not suggestions.
 
 A spec that lives in the repo gets committed on the work branch, so it ships (and gets reviewed) with the implementation.
 
@@ -60,7 +60,7 @@ If mid-implementation the approach turns out wrong (the plan fights the codebase
 
 ### 5. Deliver — no-merge mode
 
-Invoke the **deliver** skill with `--no-merge` — and with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, the local review-and-fix loop that hardens the branch before the first push, push, PR open with a top-down body (link the source ticket; name the spec if one was written), the CI loop, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
+Invoke the **deliver** skill with `--no-merge` — and with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, the local review-and-fix loop that hardens the branch before the first push, push, PR open with a body in the [house format](../pr-polish/references/pr-description.md) (link the source ticket; name the spec if one was written), the CI loop, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
 
 Do not reimplement any of that here, and never merge from this skill — not even when the diff is tiny and green. The merge decision is the human's by design.
 
