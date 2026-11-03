@@ -26,7 +26,7 @@ Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to 
 
 This skill is repo-agnostic. The concrete commands, reviewer, and merge policy come from the repository you're running in. Before Phase 1, gather:
 
-- **Check commands per package** — how to lint / typecheck / test / run codegen for each workspace. Derive from the repo's `AGENTS.md` / `CLAUDE.md`, per-package docs, and `package.json` (`scripts`) / `Makefile` / `justfile`. If the repo has a **`## Skill profile`** section in its root `AGENTS.md`, use that — it's the curated source.
+- **Check commands per package** — how to lint / typecheck / test / run codegen for each workspace. Derive from the repo's `AGENTS.md` / `CLAUDE.md`, per-package docs, and `package.json` (`scripts`) / `Makefile` / `justfile`. If the repo has a **`## Skill profile`** section in its root `AGENTS.md`, use that — it's the curated source. The CI workflow outranks docs and script names, but not a `## Skill profile` (curated on purpose, and what `upstream-pr` and `review-loop` read first): when docs or scripts disagree with the `run:` steps of the lint / format / typecheck jobs in `.github/workflows/*`, run what CI runs, flags included (a `--check` the `package.json` script lacks, a type-aware lint mode). Docs and scripts drift; CI is what turns the PR red.
 - **Repo identity** — one call covers slug, default branch, and the audience the Phase 2b gate keys on:
   ```bash
   gh repo view --json nameWithOwner,defaultBranchRef,visibility,owner

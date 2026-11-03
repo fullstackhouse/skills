@@ -1,11 +1,11 @@
 ---
 name: upstream-pr
-description: Open or update a cross-repository (fork) pull request — push the current branch to the fork remote, target the upstream repo's real base branch, respect the upstream's label/QA policy, close any now-duplicate PR inside the fork as superseded, and degrade gracefully when you lack write access there. Use when contributing to a repo you don't own, or whenever the invocation mentions a fork/upstream remote ("make an upstream PR via the X remote"). Never merges.
+description: Open or update a cross-repository (fork) pull request — push the current branch to the fork remote, target the upstream repo's real base branch, respect the upstream's label/QA policy, close any now-duplicate PR inside the fork as superseded, watch its CI to a final state, and degrade gracefully when you lack write access there. Use when contributing to a repo you don't own, or whenever the invocation mentions a fork/upstream remote ("make an upstream PR via the X remote"). Never merges.
 ---
 
 # upstream-pr
 
-You are running the **upstream-pr** skill. Goal: get the current branch reviewed upstream — pushed to the fork you can write to, opened against the upstream's real base branch, with the upstream's own PR policy applied as far as your permissions allow, and any now-duplicate PR inside the fork retired in favour of it.
+You are running the **upstream-pr** skill. Goal: get the current branch reviewed upstream — pushed to the fork you can write to, opened against the upstream's real base branch, with the upstream's own PR policy applied as far as your permissions allow, any now-duplicate PR inside the fork retired in favour of it, and its CI watched until it's green or provably waiting on someone else.
 
 Contributing from a fork is a **triangle**: commits go to one repo (the fork), review happens in another (the upstream). Almost every `git` and `gh` default assumes a single repo, so all four coordinates — fork remote, upstream slug, base branch, permission level — must be resolved explicitly, and *shown to the user before anything mutating*. Each one has a cheap, silent failure mode: a bare `git push` that hits a repo you shouldn't write to, or a PR opened against the GitHub default branch when the project actually merges into another one.
 
@@ -95,7 +95,7 @@ Detect:
 git rev-list --left-right --count '@{push}...HEAD'   # "<behind> <ahead>"; 0 0 = nothing new to push
 ```
 
-If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`.
+If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`, else from the upstream's CI: the `run:` steps of its lint, format and typecheck jobs in `.github/workflows/*`, verbatim apart from substituting `${{ matrix.* }}` / `${{ env.* }}` values (and running any setup step they depend on). Never stand in a linter you picked, run on the changed files only — it skips the formatter and the type-aware rules CI runs, and most upstreams document neither accurately in `CONTRIBUTING.md` or `package.json`.
 
 Why this matters more than in a same-repo PR: on a fork PR, CI is usually gated on maintainer approval. A red push doesn't cost you a rerun, it costs a human round-trip.
 
@@ -186,11 +186,43 @@ The fork of a public upstream is public too, so the closing comment goes through
 
 On **update** (the upstream PR already existed), run this phase anyway: a fork PR can be opened after the upstream one.
 
+### 7b. Watch CI
+
+Opening the PR is not the end of the run: a red check on a fork PR sits there until a maintainer notices it, and that's the human round-trip Phase 3 exists to avoid. Watch the head commit's checks to completion, on create **and** on update.
+
+First find out whether CI runs at all. Upstreams commonly hold workflow runs from outside contributors (first-time contributors, or all forks) until a maintainer approves them:
+
+```bash
+SHA=$(git rev-parse HEAD)
+gh api "repos/$UPSTREAM_SLUG/actions/runs?head_sha=$SHA" \
+  --jq '.workflow_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"'
+```
+
+- Any run with conclusion `action_required` → CI is **awaiting maintainer approval**. Don't wait for it; say so in the report and stop this phase.
+- No runs yet → give the forge a minute to create them, then re-check. Still none → report "no CI ran for this PR" and stop this phase; don't call `gh pr checks --watch`, which errors when no checks are reported.
+
+Otherwise watch to the end:
+
+```bash
+gh pr checks "$PR_URL" --watch
+```
+
+Never `--fail-fast`: a coverage status (codecov and friends) often reports red before every test shard has uploaded, then turns green. Judge only the final state, and confirm "failed" entries against the head commit's check runs as `deliver` Phase 6 describes (a `skipped` alert job is not a failure).
+
+On a genuine failure, run `deliver` Phase 6's fix loop with these fork constraints:
+
+- Fix with a **new commit** and push it to the fork as in Phase 4. Never amend a pushed commit or force-push (hard rule #3).
+- A lint / format / typecheck failure means the pre-push checks missed it (Phase 3 ran the wrong commands, or Phase 3 was skipped because the commits were already on the fork). Re-derive them from the upstream's CI before pushing the fix, so the next push isn't another round-trip.
+- Skip `deliver` Phase 6's re-review step: this skill never runs `review-loop`, so there is no invocation to repeat. Name a fix that changes shipped behaviour in the report as unreviewed.
+- You usually can't `gh run rerun` upstream (it needs write access). For a suspected flake, name the job and its log in the report for a maintainer to re-run, rather than pushing empty commits to retrigger it.
+- Each fix push re-runs the [Confidentiality gate](#confidentiality-gate) over the new commit and its message.
+
 ### 8. Report
 
 Final message must include:
 
 - The PR URL, and whether it was **created** or **updated**.
+- The CI result from Phase 7b: green, still red (which job, and what was tried), awaiting maintainer approval, or flaky jobs left for a maintainer to re-run. Never report the PR as done while its checks are pending or red.
 - The four resolved values and where each came from.
 - Whether the fork's base branch was fast-forwarded, by how many commits — or why it wasn't. Omit when it was already current; Phase 1 says nothing in that case and neither should the report.
 - Your permission level upstream and everything that was consequently **deferred to a maintainer** (labels, assignee, reviewer, QA gate).

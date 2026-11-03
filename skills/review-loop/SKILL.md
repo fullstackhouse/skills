@@ -150,7 +150,7 @@ This skill is repo-agnostic; four things come from the repository it runs in. Re
 
 - **Rubric** — `om-code-review`, else the built-in `code-review` skill, else the repo's own conventions. Resolution order under **Sources → local**.
 - **Base branch** — `--base` from the caller, else the PR's `baseRefName`, else `baseBranch` in `.ai/agentic.config.json`, else the `## Skill profile` key, else the repo default.
-- **Check commands** — the repo's `validation.commands`, or the `## Skill profile` per-package commands. Phase 7's gate runs a subset of these and never a command you composed yourself.
+- **Check commands** — the repo's `validation.commands`, or the `## Skill profile` per-package commands, or, with neither, the `run:` steps of the CI check jobs in `.github/workflows/*` (lint, format, typecheck and test), with `${{ matrix.* }}` / `${{ env.* }}` values substituted. Phase 7's gate runs a subset of these and never a command you composed yourself.
 - **Run directory** — `paths.runs`, else `.context/`, else `/tmp/`. It must be gitignored; see Phase 1.
 - **Reviewer logins**, only for the PR-attached sources — the `## Skill profile` keys `reviewer` (a bot login) and `reviewers` (people). No `reviewer` and no explicit login means `bot` has nothing to request: that is `exit: no-review`, not a default to guess at.
 
