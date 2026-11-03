@@ -79,6 +79,17 @@ The marketplace is named `fullstackhouse-skills`; the plugin inside it is named
 
 Skills then resolve as `/fsh:<skill-name>` everywhere, pinned to a commit SHA.
 
+Claude Code auto-updates only its official marketplace by default, so new
+versions arrive only when you update by hand:
+
+```
+claude plugin marketplace update fullstackhouse-skills
+claude plugin update fsh@fullstackhouse-skills
+```
+
+Optional: to get them at startup instead, open `/plugin` → Marketplaces, select
+`fullstackhouse-skills` and choose Enable auto-update.
+
 **Per-repo (zero-touch for everyone who opens a given repo):** commit this to
 the consuming repo's `.claude/settings.json`:
 
@@ -92,6 +103,10 @@ the consuming repo's `.claude/settings.json`:
   "enabledPlugins": { "fsh@fullstackhouse-skills": true }
 }
 ```
+
+Optional: add `"autoUpdate": true` next to `source` (the same switch as Enable
+auto-update in `/plugin`) to update the marketplace at startup. Committed here,
+it turns auto-update on for everyone who opens the repo.
 
 **Plugin skills are namespaced** (`/fsh:<name>`), so they never collide with a
 consuming repo's own `.claude/skills/<name>` (which keeps the bare `/<name>`).
@@ -200,7 +215,9 @@ Rules:
   version above the base branch's.
 
 After a version bump lands on `main`, consumers pick it up on their next
-marketplace refresh. To force it immediately:
+marketplace refresh: at startup if they turned auto-update on (see
+[Install](#install)), otherwise when they update by hand. To force it
+immediately:
 
 ```
 /plugin marketplace update fullstackhouse-skills
