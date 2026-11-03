@@ -95,7 +95,7 @@ Detect:
 git rev-list --left-right --count '@{push}...HEAD'   # "<behind> <ahead>"; 0 0 = nothing new to push
 ```
 
-If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`.
+If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`, else from the upstream's CI: the `run:` steps of its lint, format and typecheck jobs in `.github/workflows/*`, verbatim. Never stand in a linter you picked, run on the changed files only — it skips the formatter and the type-aware rules CI runs, and most upstreams document neither accurately in `CONTRIBUTING.md` or `package.json`.
 
 Why this matters more than in a same-repo PR: on a fork PR, CI is usually gated on maintainer approval. A red push doesn't cost you a rerun, it costs a human round-trip.
 
