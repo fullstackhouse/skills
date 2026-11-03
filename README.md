@@ -79,10 +79,10 @@ The marketplace is named `fullstackhouse-skills`; the plugin inside it is named
 
 Skills then resolve as `/fsh:<skill-name>` everywhere, pinned to a commit SHA.
 
-Then turn on auto-update: `/plugin` → Marketplaces → `fullstackhouse-skills` →
-Enable auto-update. Claude Code auto-updates only its official marketplace by
-default, so without this you get new versions only when you run
-`/plugin marketplace update fullstackhouse-skills` yourself.
+Claude Code auto-updates only its official marketplace by default, so new
+versions arrive when you run `/plugin marketplace update fullstackhouse-skills`.
+To get them at startup instead, turn on auto-update in `/plugin` → Marketplaces
+→ `fullstackhouse-skills` (optional; updates then land without a review step).
 
 **Per-repo (zero-touch for everyone who opens a given repo):** commit this to
 the consuming repo's `.claude/settings.json`:
@@ -91,13 +91,15 @@ the consuming repo's `.claude/settings.json`:
 {
   "extraKnownMarketplaces": {
     "fullstackhouse-skills": {
-      "source": { "source": "git", "url": "https://github.com/fullstackhouse/skills.git" },
-      "autoUpdate": true
+      "source": { "source": "git", "url": "https://github.com/fullstackhouse/skills.git" }
     }
   },
   "enabledPlugins": { "fsh@fullstackhouse-skills": true }
 }
 ```
+
+Optional: add `"autoUpdate": true` next to `source` to update the marketplace at
+startup. Committed here, it turns auto-update on for everyone who opens the repo.
 
 **Plugin skills are namespaced** (`/fsh:<name>`), so they never collide with a
 consuming repo's own `.claude/skills/<name>` (which keeps the bare `/<name>`).
@@ -206,8 +208,8 @@ Rules:
   version above the base branch's.
 
 After a version bump lands on `main`, consumers pick it up on their next
-marketplace refresh: at startup if the marketplace has auto-update on (see
-[Install](#install)), otherwise only when they update it by hand. To force it
+marketplace refresh: at startup if they turned auto-update on (see
+[Install](#install)), otherwise when they update by hand. To force it
 immediately:
 
 ```
