@@ -95,7 +95,7 @@ Detect:
 git rev-list --left-right --count '@{push}...HEAD'   # "<behind> <ahead>"; 0 0 = nothing new to push
 ```
 
-If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`, else from the upstream's CI: the `run:` steps of its lint, format and typecheck jobs in `.github/workflows/*`, verbatim. Never stand in a linter you picked, run on the changed files only — it skips the formatter and the type-aware rules CI runs, and most upstreams document neither accurately in `CONTRIBUTING.md` or `package.json`.
+If the right-hand count is 0 (and `@{push}` resolves), the commits are already on the fork and were presumably checked when they got there — **skip this phase**. Otherwise run the sibling **`deliver`** skill's Phase 2 (local checks) rather than duplicating it here, sourcing the commands from the repo's `validation.commands` / `## Skill profile`, else from the upstream's CI: the `run:` steps of its lint, format and typecheck jobs in `.github/workflows/*`, verbatim apart from substituting `${{ matrix.* }}` / `${{ env.* }}` values (and running any setup step they depend on). Never stand in a linter you picked, run on the changed files only — it skips the formatter and the type-aware rules CI runs, and most upstreams document neither accurately in `CONTRIBUTING.md` or `package.json`.
 
 Why this matters more than in a same-repo PR: on a fork PR, CI is usually gated on maintainer approval. A red push doesn't cost you a rerun, it costs a human round-trip.
 
@@ -199,7 +199,7 @@ gh api "repos/$UPSTREAM_SLUG/actions/runs?head_sha=$SHA" \
 ```
 
 - Any run with conclusion `action_required` → CI is **awaiting maintainer approval**. Don't wait for it; say so in the report and stop this phase.
-- No runs yet → give the forge a minute to create them, then re-check before concluding the upstream has no CI for PRs.
+- No runs yet → give the forge a minute to create them, then re-check. Still none → report "no CI ran for this PR" and stop this phase; don't call `gh pr checks --watch`, which errors when no checks are reported.
 
 Otherwise watch to the end:
 
@@ -212,7 +212,8 @@ Never `--fail-fast`: a coverage status (codecov and friends) often reports red b
 On a genuine failure, run `deliver` Phase 6's fix loop with these fork constraints:
 
 - Fix with a **new commit** and push it to the fork as in Phase 4. Never amend a pushed commit or force-push (hard rule #3).
-- A lint / format / typecheck failure means Phase 3 ran the wrong commands. Re-derive them from the upstream's CI before pushing the fix, so the next push isn't another round-trip.
+- A lint / format / typecheck failure means the pre-push checks missed it (Phase 3 ran the wrong commands, or Phase 3 was skipped because the commits were already on the fork). Re-derive them from the upstream's CI before pushing the fix, so the next push isn't another round-trip.
+- Skip `deliver` Phase 6's re-review step: this skill never runs `review-loop`, so there is no invocation to repeat. Name a fix that changes shipped behaviour in the report as unreviewed.
 - You usually can't `gh run rerun` upstream (it needs write access). For a suspected flake, name the job and its log in the report for a maintainer to re-run, rather than pushing empty commits to retrigger it.
 - Each fix push re-runs the [Confidentiality gate](#confidentiality-gate) over the new commit and its message.
 
