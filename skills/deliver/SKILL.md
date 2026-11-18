@@ -94,6 +94,21 @@ Look at `git diff "$BASE_REF"...HEAD --name-only` and bucket the touched files b
 
 On a stacked run that range is deliberately narrow: the parent's files were already checked on the parent's PR. Don't widen it back to the default branch to be safe — that re-runs the parent's whole check surface on every child in the stack, which is the cost stacking exists to avoid.
 
+### 1b. Preview data — only if the repo asks for it
+
+Some repos require that a new or changed screen be visible on a fresh install without anyone creating data by hand: a demo-data or preview-seed rule in their agent docs, or a preview-data section in the PR template. Look for one. No such rule → skip this phase.
+
+When the rule exists and the Phase 1 diff adds or changes something a person sees (a page, a list, a dialog, a state of an existing screen):
+
+1. List the states a reviewer needs to judge the change: the populated screen, plus each state this change adds or changes. Skip cosmetics, loading spinners and paging limits; aim for six lines or fewer.
+2. For each state that seed data can reach, make sure the repo's seed mechanism creates a record showing it. Extend the seeds in this branch when they don't, following the repo's seeding rules (idempotent, the documented write path). A module with no seeds yet gets its first ones here; "there was nothing to extend" is not a reason to skip.
+3. Prove it the cheapest way the repo offers: its seed tests, or a fresh init that you open.
+4. Keep the list for Phase 5: one line per state with the record and the page path. A state seeds can't reach (an error, a permission denial, a whole-install state) is named with how to reach it.
+
+When nothing new needs seeding to see the change (backend-only, refactor, docs, changed wording on an existing screen), write `N/A — <reason>` in that section instead, plus where to look if people see a difference. The repo's own definition of the section wins over this one. Never leave the section out when the template has it.
+
+Seed data is published code: when the Phase 2b gate fires, the seeds pass it too. Invented names only, never a client's real data.
+
 ### 2. Local checks (front-load CI)
 
 Run the touched packages' checks IN PARALLEL where independent. These are the same gates CI runs — if any fail, fix locally before pushing. For each touched package, run its documented:
@@ -189,7 +204,7 @@ If the branch isn't pushed yet, push with `-u`. If it is, just push.
 gh pr view --json number,url,reviewDecision,reviews,headRefOid 2>/dev/null
 ```
 
-- No PR → `gh pr create --base "$BASE_REF"`. Title in Conventional Commits style stating the plain-language outcome. Write the body in the [house format](../pr-polish/references/pr-description.md), after the context/task line: a short paragraph with no headings for a small PR; otherwise general-to-specific sections (🎯 problem → 🔧 fix → 🧭 impact → 🧩 how the pieces fit → 🔍 details → ✅ testing → ⚠️ worth knowing), dropping empty ones, whose heading words state this PR's actual problem, fix or impact, never `### 🎯 The problem`. A repo's own template or documented format wins.
+- No PR → `gh pr create --base "$BASE_REF"`. Title in Conventional Commits style stating the plain-language outcome. Write the body in the [house format](../pr-polish/references/pr-description.md), after the context/task line: a short paragraph with no headings for a small PR; otherwise general-to-specific sections (🎯 problem → 🔧 fix → 🧭 impact → 🧩 how the pieces fit → 🔍 details → ✅ testing → ⚠️ worth knowing), dropping empty ones, whose heading words state this PR's actual problem, fix or impact, never `### 🎯 The problem`. A repo's own template or documented format wins. If Phase 1b ran, the preview-data section carries its list.
 - PR exists → the push updated the code, but check the title/description still tell the truth: if the work drifted since they were written (rebase, review rework, scope change, a referenced PR merged), run the **pr-polish** skill — a stale description misleads whoever reads it next.
 
 **The body carries the review evidence.** Moving the review off the PR removes the only public record that one happened, and a human arriving at this PR has no way to tell a reviewed branch from an unreviewed one. Under **✅ Testing**, state it plainly (a small PR without headings says it in a sentence or two): the rubric the loop used, how many rounds it ran, how many findings it fixed and refuted, and what gate passed. Then, under **⚠️ Worth knowing**, an **Open questions** list — one line per `handed up` entry in `open[]`, naming the decision rather than describing a problem. Key it on those specifically: `open[]` also carries deliberately-`left` nits and, after a `--no-fix` run, `proposed` ones, so a section triggered by "non-empty" would open with a heading and nothing under it. Put the rest under ⚠️ as follow-ups — including every `out-of-diff` finding, which belongs there and never under Open questions: it is not a decision about this change, and listing it as one invites the next reader to ask why the PR didn't fix it.
