@@ -90,52 +90,57 @@ The deliverable is a stack the user can act on in the order it was built:
 
 ## Track mode
 
-For a goal rather than a list: "migrate every remaining screen onto the shared layer", "finish this track". Its questions surface only during the work, one per module, so a plan round up front catches few of them, and asking as they appear turns the owner into the scheduler. Track mode finds them in one pass at night and asks them in one sitting in the morning.
+For a goal rather than a list: "migrate every remaining screen onto the shared layer", "finish this track". Its questions surface only during the work, one per unit, so a plan round up front catches few of them, and asking as they appear turns the owner into the scheduler. Track mode finds them in one pass at night and asks them in one sitting in the morning.
 
-Evening, with the owner: the goal, what is out of scope, what the run may decide alone, and the time the morning packet is due.
+**Plan round (evening).** This is track mode's Phase 3: agree the goal, what is out of scope, what the run may decide alone, and the time the morning packet is due. Run Phase 2's base-branch preflight here. Get an explicit go; after it, rule 3 applies.
+
+**The item** is one unit of the goal (a screen, a module), or one change to shared code. Every unit the scout finds inside the agreed goal is on the list, so rule 7 does not apply to them; anything outside the goal is a follow-up.
 
 ### T1. Scout
 
-In throwaway worktrees (never pushed), attempt the **whole** goal roughly: every remaining module or screen, not the first one. Record each gap: what is missing, which units need it, what was tried. Then remove the scout worktrees.
+In throwaway local worktrees, never pushed, attempt the **whole** goal roughly: every remaining unit, not the first one. Record each gap: what is missing, which units need it, what was tried. Then remove the scout worktrees.
 
 ### T2. Challenge every gap
 
-Before a gap becomes a proposal, check in this order, and keep the answers for the packet:
+Check each gap in order. The first "yes" decides it:
 
-1. Can it be deleted instead?
-2. Does an existing primitive already do it (a field type, a config value, an existing option)?
-3. Does the owning unit own it?
-4. Will improving it later need per-unit edits?
-5. What does the caller's code look like before and after?
+1. **Can it be deleted instead?** Yes → it becomes a Park proposal to delete it (T3).
+2. **Does an existing primitive already do it** (a field type, a config value, an existing option)? Yes → not a gap; the unit uses the primitive.
+3. **Does it belong only to the unit that needs it?** Yes → it is fixed inside that unit's own item.
+4. **Otherwise** it is a shared-code change: it survives, and T3 places it.
 
-Cluster the survivors by **root question**, meaning the decision that, once answered, settles the others. Sub-questions go inside their root and are never asked on their own.
+For every survivor, record the caller's code before and after. Cluster survivors by **root question**, the decision that settles the others once it is answered. Sub-questions go inside their root and are never asked on their own.
 
 ### T3. Build in three levels
 
-- **Decide:** work on top of what already exists, test and tooling fixes, bugs reproduced from the code. Ship each as an ordinary PR.
-- **Assume and show:** reversible choices and small additions to shared code. Build each as its own **draft** PR with the caller's code before and after, stacked at most one level deep. Record the assumption.
-- **Park:** schema, the security model, new concepts, deletions. Write a proposal only, with no code, and move on to other units. Never stop the night on one.
+Each item goes through Phase 4: `kickoff --base <parent>`, then `deliver --no-merge`. The brief to `kickoff` includes the plan-round answers and the line *"no questions tonight: record an assumption instead"*. The owner's "may decide alone" list overrides the default placement below.
 
-The only questions asked during the night are about security, data loss or a broken base branch. Report a bug only after reproducing it.
+- **Build:** units that need no new shared code, test and tooling fixes, and bugs reproduced from the code. A normal PR on the base branch.
+- **Assume and show:** reversible shared-code changes, and the units that need them. Each change is its own PR; its body opens with *"Proposal: approve or reject at merge"*, the assumption, and the caller's code before and after. A unit that needs it stacks on that PR, one level deep at most.
+- **Park:** schema, the security model, new concepts, deletions. A written proposal in the morning packet, no code. Work continues on other units; one parked unit never stops the night.
 
-**Cap work in progress.** Each open PR uses shared resources: CI minutes, preview environments, review attention. Stop opening PRs at the repo's limit (its profile, else about 8). Hold finished work as pushed branches and list them in the packet.
+Ask at night only about security, data loss or a broken base branch, and do not wait for the answer. Park the affected units and keep working on the rest.
 
-**Schedule the morning wake-up before the turn ends.** An agent whose turn has ended sleeps until something wakes it, so "I'll post at 07:45" never happens unless a schedule or heartbeat (whatever the harness offers) is set to send that prompt.
+**Cap work in progress.** Every open PR uses shared resources: CI, preview environments, review attention. Stop opening PRs at the limit agreed in the plan round (default 8). Keep further finished items as local branches, unpublished, and list them in the packet; publishing them later goes through `deliver`.
+
+**Keep a night log** of assumptions, held branches, and idle periods with their causes. The packet is built from it.
+
+**Schedule the morning wake-up before the turn ends.** An agent whose turn has ended sleeps until something wakes it, so "I'll post at <packet time>" never happens unless a schedule or heartbeat sends that prompt. If the harness has neither, post the packet as the run's final message and say the wake-up could not be set.
 
 ### T4. Morning packet
 
-One message, one ask per root decision, ordered root question first. Each carries a recommendation, a confidence level, the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep the packet small enough for one sitting, about 10 decisions. Fold drafts that share a root into one ask, and list the rest as parked with what would reopen them.
+One message, with one ask per root decision, root question first. An ask is the harness's native ask where one exists; otherwise it is a numbered decision in the message. Each carries a recommendation, a confidence level (high, medium or low), the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep it answerable in one sitting, about 10 decisions. Fold PRs that share a root into one ask, and list the rest as parked, each with what would reopen it.
 
-Then add **one merge-train ask** that names every ready PR with its evidence. Clicking it is the owner's explicit request to merge exactly those PRs, in that order, each when green. That keeps "never merge without an explicit request" intact while costing one click instead of one per PR.
+Add **one merge-train ask** listing every ready PR in merge order, bottom-up, with its evidence. This skill does not merge it. The owner's approval starts a separate step: `deliver` without `--no-merge`, one PR at a time, in that order. For a stacked child, follow Phase 5's steps before merging it: delete the merged parent's branch, confirm the child's base, rebase it, and wait for green.
 
-Finish with the night's assumptions, the branches held without PRs, and the idle time with its causes.
+End with the night log, and Phase 5's stack notes for any stacked PRs.
 
 ## Hard rules
 
-1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands.
-2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive.
-3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption. Track mode has no plan round: it parks the questions until the morning packet, except security, data loss and a broken base branch.
+1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands. Track mode's merge-train ask only proposes; its approval starts a separate `deliver` run per PR.
+2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive. In track mode an item is one unit or one shared-code change.
+3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption. In track mode the plan round is the evening one; after it, questions wait for the morning packet, except security, data loss and a broken base branch, which are asked without stopping the run.
 4. **Delegate.** `kickoff` implements; `deliver` publishes, checks, and enforces the confidentiality gate. This skill never opens a PR, pushes, or runs a check itself.
 5. **Never work on or push to the base branch.**
 6. **A failed item stops its descendants only** — never the independent chains, and never silently.
-7. **Don't expand the list.** Work discovered mid-run becomes a follow-up in the report, not an extra PR nobody asked for.
+7. **Don't expand the list.** Work discovered mid-run becomes a follow-up in the report, not an extra PR nobody asked for. In track mode the list is every unit inside the agreed goal, as the scout found it.
