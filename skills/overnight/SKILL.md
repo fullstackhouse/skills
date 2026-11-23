@@ -137,7 +137,7 @@ End with the night log. The merge train does the retarget and rebase from Phase 
 
 ## Hard rules
 
-1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands. An approved merge-train ask is the owner's request, carried out by `deliver --merge-only` at the SHAs the owner saw, not by this skill.
+1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands. An approved merge-train ask is the owner's request, carried out by `deliver --merge-only` at the SHAs the owner saw, or patch-identical rebases of them, not by this skill. The train runs only after the owner's own approval of it.
 2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive. In track mode an item is one unit or one shared-code change.
 3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption. In track mode the plan round is the evening one; after it, questions wait for the morning packet, except security, data loss and a broken base branch, which are asked without stopping the run.
 4. **Delegate.** `kickoff` implements; `deliver` publishes, checks, and enforces the confidentiality gate. This skill never opens a PR, pushes, or runs a check itself.
