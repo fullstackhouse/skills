@@ -1,6 +1,6 @@
 ---
 name: overnight
-description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. Never merges.
+description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. With `--track`, takes a goal instead of a list ("migrate every remaining page", "finish this track tonight"): scouts the whole goal first to find the questions, builds what needs no answer, and wakes the owner to one morning packet. Never merges.
 ---
 
 # overnight
@@ -23,6 +23,7 @@ Repo-agnostic, like the rest of the collection. From the consuming repo's `AGENT
 ## Arguments
 
 - **A list of items** in any of these shapes, mixed freely: spec paths, a specs directory to scan, tracker ticket IDs/URLs, a brainstorm brief, or plain prose bullets.
+- **`--track <goal>`** — a goal whose questions don't exist yet, because they only appear while doing the work. Runs [Track mode](#track-mode) instead of the phases below.
 - **Empty** — ask what the list is. Never assemble a backlog by guessing what the repo needs.
 
 ## Phases
@@ -87,12 +88,59 @@ The deliverable is a stack the user can act on in the order it was built:
 - **Where each chain stopped**, and what unblocking it needs.
 - **Follow-ups discovered and deliberately not done.**
 
+## Track mode
+
+For a goal rather than a list: "migrate every remaining screen onto the shared layer", "finish this track". Its questions surface only during the work, one per unit, so a plan round up front catches few of them, and asking as they appear turns the owner into the scheduler. Track mode finds them in one pass at night and asks them in one sitting in the morning.
+
+**Plan round (evening).** This is track mode's Phase 3: agree the goal, what is out of scope, what the run may decide alone, and the time the morning packet is due. Run Phase 2's base-branch preflight here. Get an explicit go; after it, rule 3 applies.
+
+**The item** is one unit of the goal (a screen, a module), or one change to shared code. Every unit the scout finds inside the agreed goal, and every shared-code change T2 keeps for them, is on the list, so rule 7 does not apply to them; anything outside the goal is a follow-up.
+
+### T1. Scout
+
+In throwaway local worktrees, never pushed, attempt the **whole** goal roughly: every remaining unit, not the first one. Record each gap: what is missing, which units need it, what was tried. Then remove the scout worktrees.
+
+### T2. Challenge every gap
+
+Check each gap in order. The first "yes" decides it:
+
+1. **Can it be deleted instead?** Yes → it becomes a Park proposal to delete it (T3).
+2. **Does an existing primitive already do it** (a field type, a config value, an existing option)? Yes → not a gap; the unit uses the primitive.
+3. **Does it belong only to the unit that needs it?** Yes → it is fixed inside that unit's own item.
+4. **Otherwise** it is a shared-code change: it survives, and T3 places it.
+
+For every survivor, record the caller's code before and after. Cluster survivors by **root question**, the decision that settles the others once it is answered. Sub-questions go inside their root and are never asked on their own.
+
+### T3. Build in three levels
+
+Each Build and Assume-and-show item goes through Phase 4: `kickoff --base <parent>`, then `deliver --no-merge`. The night-time exception below replaces Phase 4's "Never ask" paragraph. The brief to `kickoff` includes the plan-round answers and the line *"no questions tonight: record an assumption instead"*. The owner's "may decide alone" list overrides the default placement below.
+
+- **Build:** units that need no new shared code, test and tooling fixes, and bugs reproduced from the code. A normal PR on the base branch.
+- **Assume and show:** reversible shared-code changes, and the units that need them. Each change is its own PR; its body opens with *"Proposal: approve or reject at merge"*, the assumption, and the caller's code before and after. A unit that needs it stacks on that PR, one level deep at most.
+- **Park:** schema, the security model, new concepts, deletions. A written proposal in the morning packet, no code. Work continues on other units; one parked unit never stops the night.
+
+Ask at night only about security, data loss or a broken base branch, and do not wait for the answer. Park the affected units and keep working on the rest.
+
+**Cap work in progress.** Every open PR uses shared resources: CI, preview environments, review attention. At the limit agreed in the plan round (default 8), stop starting new items. List the rest in the packet as *not started (limit)*; they start once merges free slots.
+
+**Keep a night log** of assumptions, held branches, and idle periods with their causes. The packet is built from it.
+
+**Schedule the morning wake-up before the turn ends.** An agent whose turn has ended sleeps until something wakes it, so "I'll post at <packet time>" never happens unless a schedule or heartbeat sends that prompt. If the harness has neither, post the packet as the run's final message and say the wake-up could not be set.
+
+### T4. Morning packet
+
+One message, with one ask per root decision, root question first. An ask is the harness's native ask where one exists; otherwise it is a numbered decision in the message. Each carries a recommendation, a confidence level (high, medium or low), the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep it answerable in one sitting, about 10 decisions. Fold PRs that share a root into one ask, and list the rest as parked, each with what would reopen it.
+
+List the ready PRs with their evidence, Build PRs first and stacked PRs under their parent with Phase 5's stack notes. This skill does not merge them, and the packet does not batch their merges: each merges by the owner's own request, as in any other run.
+
+End with the night log, and Phase 5's stack notes for any stacked PRs.
+
 ## Hard rules
 
 1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands.
-2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive.
-3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption.
+2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive. In track mode an item is one unit or one shared-code change.
+3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption. In track mode the plan round is the evening one; after it, questions wait for the morning packet, except security, data loss and a broken base branch, which are asked without stopping the run.
 4. **Delegate.** `kickoff` implements; `deliver` publishes, checks, and enforces the confidentiality gate. This skill never opens a PR, pushes, or runs a check itself.
 5. **Never work on or push to the base branch.**
 6. **A failed item stops its descendants only** — never the independent chains, and never silently.
-7. **Don't expand the list.** Work discovered mid-run becomes a follow-up in the report, not an extra PR nobody asked for.
+7. **Don't expand the list.** Work discovered mid-run becomes a follow-up in the report, not an extra PR nobody asked for. In track mode the list is every unit inside the agreed goal, plus the shared-code changes T2 keeps for them.
