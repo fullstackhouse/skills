@@ -33,7 +33,8 @@ not in the target's repo when that is elsewhere. Never stage or commit them.
 | a system ("how does search work") | trace the flow in code from entry point to storage |
 | "what have we done here" | branch log vs base, PRs from this branch, this session |
 
-Open with one line, before the Short, naming what you took the target to be. Ambiguous → pick
+Open with one line, before the Short, naming what you took the target to be — identifiers are
+fine there; it isn't part of the Short. Ambiguous → pick
 the likeliest and give the runner-up one line at the end ("If you saw it on X instead: …").
 Don't stop to ask.
 
@@ -44,13 +45,14 @@ Don't stop to ask.
   READMEs). Broad surface → one subagent per area; keep the conclusions, not file dumps.
 - **Who uses it.** For a decision or a change, find out who depends on the feature at stake,
   today and soon: callers, config, enabled flags, data, the roadmap. A decision about a feature
-  nobody uses is a different decision. If you can't find out, that is the first thing the
-  Short says.
+  nobody uses is a different decision. If you can't find out, the Short says so under
+  *Who it touches*.
 - **Every fact checked, attributed or marked.** Checked: you read or ran it. Attributed: "the
   PR says tests failed before the fix". Otherwise `(unverified)`. Never ask what you can look
   up — count it, run it, read it.
 - **The target can be wrong.** When the ask, PR or spec misstates a fact, say so in one line
-  ("Correction: the copy is deleted in PR 11, not PR 10"). Never fix it silently.
+  ("Correction: the copy is deleted in PR 11, not PR 10"), where the fact comes up in the Short.
+  Never fix it silently.
 - **Names may be invented, behaviour may not.** The person is made up; what happens to them,
   and the numbers, must match the code and the data.
 - **How others do it** — when a design choice is in play (a decision, a design, a term, a
@@ -80,7 +82,7 @@ would notice; the rest go to Detail.
    design than the ones on the table, say so — that is a good outcome, not a detour.
 6. **By target:**
    - **Decision** — options as consequences: "**A** — if you pick it, Ben…; costs…; lets us
-     delete…; closes off…; undo by…". Name what each option removes as well as what it
+     delete…; closes off…; undo by…" (skip what doesn't apply). Name what each option removes as well as what it
      degrades. Alternatives that differ in kind, always including **dropping or freezing the
      feature that forces the question**, plus any design the picture revealed; **status quo
      last**, priced like the rest (its cost is usually delay). When an ask's buttons are fixed,
@@ -133,7 +135,8 @@ may go in a small self-contained `.html` beside it.
 
 After the Short, offer **a rewritten ask body** — the Short as paste-ready markdown, with any
 corrections applied: the question as the title, options lettered with the status quo last,
-the recommendation marked, and the Short's diagram reused rather than redrawn. It doesn't count
+the recommendation marked, and the Short's diagram reused rather than redrawn. Every option
+gets a letter, including those not on the old buttons — the asker adds buttons to match. It doesn't count
 toward the Short's word budget. It is chat output: don't edit an ask you didn't create.
 
 ## Hard rules
