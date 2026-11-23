@@ -1,6 +1,6 @@
 ---
 name: overnight
-description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. With `--track`, takes a goal instead of a list ("migrate every remaining page", "finish this track tonight"): scouts the whole goal first to find the questions, builds what needs no answer, and wakes the owner to one morning packet and one merge-train ask. Never merges.
+description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. With `--track`, takes a goal instead of a list ("migrate every remaining page", "finish this track tonight"): scouts the whole goal first to find the questions, builds what needs no answer, and wakes the owner to one morning packet and a merge-train ask. Never merges.
 ---
 
 # overnight
@@ -131,9 +131,9 @@ Ask at night only about security, data loss or a broken base branch, and do not 
 
 One message, with one ask per root decision, root question first. An ask is the harness's native ask where one exists; otherwise it is a numbered decision in the message. Each carries a recommendation, a confidence level (high, medium or low), the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep it answerable in one sitting, about 10 decisions. Fold PRs that share a root into one ask, and list the rest as parked, each with what would reopen it.
 
-Add **one merge-train ask**. It lists, bottom-up, every ready Build PR and its stacked children, each with its evidence and its **current head SHA**. Assume-and-show PRs, and their children, join only after their root ask is approved, as a new train ask; a rejected root's PRs are listed for the owner to close. This skill merges nothing. Approving the train asks the agent to run, for each listed PR in order, `deliver --merge-only --expect-head <sha>` from that PR's branch. If a PR does not merge, its stacked children are skipped and every independent PR continues (rule 6). The agent reports each PR's outcome.
+Add **one merge-train ask**. It lists, bottom-up, every ready Build PR and its stacked children. Each entry carries its evidence, its PR number, its **current head SHA**, and for a stacked child the parent's PR number and head SHA. Assume-and-show PRs, and their children, join only after their root ask is approved, as a new train ask; a rejected root's PRs are listed for the owner to close. This skill merges nothing. Approving the train asks the agent to run, for each listed PR in order, `deliver --merge-only --pr <N> --expect-head <sha>`, adding `--parent <P> --parent-head <psha>` for a stacked child. The approval prompt embeds that ordered list. If a PR does not merge, its stacked children are skipped and every independent PR continues (rule 6). The agent reports each PR's outcome.
 
-End with the night log, and Phase 5's stack notes for any stacked PRs.
+End with the night log. The merge train does the retarget and rebase from Phase 5's stack notes, so the owner does not repeat them by hand.
 
 ## Hard rules
 

@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it and stops at ready-for-review. CI is slow and a bot reviewer is slower; do not lean on either as a first pass. `--merge-only --expect-head <sha>` instead merges an already-approved PR at exactly that head, and nothing else.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it and stops at ready-for-review. CI is slow and a bot reviewer is slower; do not lean on either as a first pass. Use `--merge-only --pr <N> --expect-head <sha>` instead to carry out an owner's approval of a PR at a specific head, as in a merge train; it merges that head and adds no change of its own.
 ---
 
 # deliver
@@ -15,12 +15,12 @@ Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to 
 
 **Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 7's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
 
-**Merge-only mode:** `--merge-only --expect-head <sha>` merges an existing PR the owner has approved at that exact head, and changes nothing else. It is the executor behind a batched approval such as `overnight` track mode's merge train. It runs [its own procedure](#merge-only-mode) instead of the phases.
+**Merge-only mode:** `--merge-only --pr <N> --expect-head <sha>` merges an existing PR the owner has approved at that exact head, and adds no change of its own. It is the executor behind a batched approval such as `overnight` track mode's merge train. It runs [its own procedure](#merge-only-mode) instead of the phases.
 
 ## Arguments
 
 - **`--no-merge`** — stop at ready-for-review; Phase 7 assesses but never merges. How **kickoff** calls this.
-- **`--merge-only --expect-head <sha>`** — merge an existing PR the owner approved at `<sha>`, without reviewing, fixing or committing anything. See [Merge-only mode](#merge-only-mode). Incompatible with `--no-merge`.
+- **`--merge-only --pr <N> --expect-head <sha> [--parent <P> --parent-head <psha>]`** — merge an existing PR the owner approved at `<sha>`, adding no change of its own. See [Merge-only mode](#merge-only-mode). No other flags are allowed with it.
 - **`--base <branch>`** — target `<branch>` instead of the repo default, and compute every diff in the run against it. For stacking.
 - **`--bot-review` / `--no-bot-review`** — force Phase 6b's on-record bot review on or off, overriding the `reviewer` profile knob for this run.
 - **`--review-rounds N`** — cap Phase 3's local review at `N` rounds. **0–10, default 3.** Raise it for a change whose review keeps finding real defects. **Don't lower it to 1 or 2 to save time** — Phase 3 fixes what round 1 raises, and with `--quiet-rounds 1` a confirming round then has to fit inside the budget. (That confirming round is cheap: one reviewer on the fix commits, and it only has to come back free of blockers and majors, not free of nits. It runs only when round 1 fixed a blocker or major; a round 1 that confirmed nothing worse than a minor ends the loop.) At `N=1` any finding at all guarantees `budget-exhausted`, which Phase 7 reports as `blocked`, and the loop's own rules forbid buying more rounds by re-invoking. If you have already reviewed the work, pass `0`, not `1`. **`0` skips the review entirely and forces `--no-merge`** — see Phase 3. A value outside 0–10 is a stop, not a clamp: silently reviewing three times when someone asked for thirty is worse than refusing.
@@ -52,20 +52,27 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 ## Merge-only mode
 
-Run it from the PR's branch, given `--expect-head <sha>`: the head the owner saw when approving. It never runs Phases 1–6b and never commits, reviews or fixes. **The owner's approval of that exact head stands in for Phase 7's review conditions**, and only for that head. A run that would add a single commit stops instead, because the owner did not see it.
+`--merge-only --pr <N> --expect-head <sha>`, plus `--parent <P> --parent-head <psha>` for a PR that was stacked on PR `<P>` at head `<psha>`. The caller (a merge-train approval) supplies all of these; refuse if any is missing, or if other flags are passed with them. The mode adds no change of its own: the only new commits it may create are a patch-identical rebase (step 3). **The owner's approval of that exact head stands in for Phase 7's review conditions, and for nothing else.**
 
-1. **Read the PR:** `gh pr view <N> --json headRefOid,baseRefName,state,reviewDecision,labels`. Stop if it is not open, carries a merge-blocking label from the repo's own rules (`do-not-merge`, `blocked`, a QA gate not satisfied), or has an unresolved actionable review thread (Phase 6b's reads).
-2. **Head check.** `headRefOid` must equal `<sha>`. If it differs, report *changed since approval* and stop. Never merge a head the owner did not approve.
-3. **Stacked child whose parent has merged.** When `baseRefName` is a branch whose PR is now `MERGED`:
-   - retarget to the parent's own base (`gh pr edit <N> --base <grandparent>`). The approval of the train that lists both covers this;
-   - rebase only the child's own commits: `git rebase --onto origin/<grandparent> <parent's last head> HEAD`;
-   - **prove the content did not change.** `git diff <parent's last head> <sha> | git patch-id --stable` must equal `git diff origin/<grandparent> HEAD | git patch-id --stable`. If they differ, the rebase changed the code; report *conflict on rebase* and stop;
-   - push with `git push --force-with-lease=<branch>:<sha> origin HEAD:<branch>`. The lease fails if anyone pushed meanwhile.
+0. **Setup:** export `SLUG` as Phase 0 does; refuse on a dirty tree; `git fetch origin`; `git checkout <headRefName>` and require it to equal `<sha>`.
+1. **Read the PR:** `gh pr view <N> --json state,headRefName,headRefOid,baseRefName,reviewDecision,mergeStateStatus,labels,mergeCommit`.
+   - Already `MERGED` with `headRefOid` equal to `<sha>`: report `merged` and stop. This makes a re-run safe.
+   - Not open, a merge-blocking label from the repo's rules (`do-not-merge`, `blocked`, an unmet QA gate), `reviewDecision: CHANGES_REQUESTED`, or an unresolved review thread (`reviewThreads { isResolved }` through `gh api graphql`; read review bodies too, per Phase 6b): report `blocked: <reason>` and stop.
+   - `REVIEW_REQUIRED` and `ownerCanSelfMerge` is not true: report `awaiting-review` and stop. A chat approval is not a forge approval.
+2. **Head check.** `headRefOid` must equal `<sha>`. If it differs, report `changed since approval` and stop.
+3. **Parent.**
+   - **No `--parent`:** run Phase 7's stacked-base check on `baseRefName`. An open PR there means report `blocked-on-parent-PR #<n>` and stop.
+   - **`--parent` given:** the parent PR must be `MERGED`, or report `blocked-on-parent-PR #<P>` and stop. `<psha>` must be an ancestor of `<sha>` (`git merge-base --is-ancestor`), or report `blocked: not stacked on the parent's final head`. Let `<base>` be the parent's `baseRefName`. Then, in this order:
+     1. `git fetch origin <base>`, and check that the parent's `mergeCommit` is an ancestor of `origin/<base>`.
+     2. `git rebase --onto origin/<base> <psha> <headRefName>`. On any conflict, run `git rebase --abort`, report `conflict on rebase` and stop. **Never resolve a conflict in this mode.**
+     3. Prove the content is unchanged. `git diff <psha> <sha> | git patch-id --verbatim` must equal `git diff origin/<base> HEAD | git patch-id --verbatim`. `--verbatim` counts whitespace. If they differ, run `git reset --hard <sha>`, report `conflict on rebase` and stop.
+     4. `git push --force-with-lease=<headRefName>:<sha> origin <headRefName>`.
+     5. If `baseRefName` is not already `<base>`, run `gh pr edit <N> --base <base>`. The forge usually retargeted it when the parent's branch was deleted.
 
-   The new head is now the approved head, by the patch-id proof. Use it for every check below.
-4. **CI green on that head** (Phase 6's head-commit reading). Wait while checks are pending. If they fail, report and stop: no fixes in this mode.
-5. **Merge:** `gh pr merge <N> --squash --delete-branch --match-head-commit <head>` (add `--admin` only under `ownerCanSelfMerge`, as Phase 7 does). Then confirm `MERGED` as Phase 7 says, and run Phase 7b.
-6. **Report** one of: `merged`, `changed since approval`, `conflict on rebase`, `CI failed`, `blocked: <reason>`.
+     The rebased head is approved by the proof. Use it as `<sha>` from here on.
+4. **CI green on `<sha>`.** Read the check-runs as Phase 6 does. Wait until the required checks exist on that head (an empty list right after a push is not green), then until they finish. On a failure, report `CI failed` and stop: no fixes in this mode. If `mergeStateStatus` is `BEHIND` (the branch must be up to date), report `blocked: base moved`; updating it would add a commit the owner did not see.
+5. **Merge:** `gh pr merge <N> --squash --delete-branch --match-head-commit <sha>`, adding `--admin` only under `ownerCanSelfMerge`, as Phase 7 does. Confirm `MERGED` as Phase 7 says; if the remote branch survived a local-delete error, remove it with `git push origin --delete <headRefName>`. Then run Phase 7b.
+6. **Report** one of: `merged`, `changed since approval`, `blocked-on-parent-PR #<n>`, `conflict on rebase`, `CI failed`, `awaiting-review`, or `blocked: <reason>`.
 
 ## Phases
 
@@ -237,7 +244,7 @@ Everything in that section is published text and passes the Phase 2b gate first:
 
 Save the PR number to `.context/deliver/pr-number`.
 
-**An existing PR's base is not yours to change.** If its `baseRefName` differs from `BASE_REF` — a stack re-run after the parent landed and the forge retargeted the child, or a `--base` that disagrees with what is on record — report the mismatch and continue against the base the PR already has. Retargeting silently changes what every approval and every review comment on that PR applied to; only a human may decide that.
+**An existing PR's base is not yours to change.** If its `baseRefName` differs from `BASE_REF` — a stack re-run after the parent landed and the forge retargeted the child, or a `--base` that disagrees with what is on record — report the mismatch and continue against the base the PR already has. Retargeting silently changes what every approval and every review comment on that PR applied to; only a human may decide that. (Merge-only mode's step 3 is the one exception: the owner's train approval covers that retarget.)
 
 ### 5b. Tracker — the work is now up for review
 
@@ -355,7 +362,7 @@ Merge condition (ALL must hold):
 
   The short-circuit is load-bearing, not an optimisation: `--head` matches on branch *name* and includes cross-repository PRs, so one open fork PR whose head branch is called `main` would otherwise mark **every** PR in the repo as stacked and disable auto-merge outright.
 
-  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself. On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up. Report it as `blocked-on-parent-PR` with the parent's number — a healthy stack waiting its turn, not a failure. AND
+  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself. (Merge-only mode's step 3 is the one exception: the owner's train approval covers that retarget.) On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up. Report it as `blocked-on-parent-PR` with the parent's number — a healthy stack waiting its turn, not a failure. AND
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 6 before calling it red), AND
