@@ -94,7 +94,7 @@ For a goal rather than a list: "migrate every remaining screen onto the shared l
 
 **Plan round (evening).** This is track mode's Phase 3: agree the goal, what is out of scope, what the run may decide alone, and the time the morning packet is due. Run Phase 2's base-branch preflight here. Get an explicit go; after it, rule 3 applies.
 
-**The item** is one unit of the goal (a screen, a module), or one change to shared code. Every unit the scout finds inside the agreed goal is on the list, so rule 7 does not apply to them; anything outside the goal is a follow-up.
+**The item** is one unit of the goal (a screen, a module), or one change to shared code. Every unit the scout finds inside the agreed goal, and every shared-code change T2 keeps for them, is on the list, so rule 7 does not apply to them; anything outside the goal is a follow-up.
 
 ### T1. Scout
 
@@ -113,7 +113,7 @@ For every survivor, record the caller's code before and after. Cluster survivors
 
 ### T3. Build in three levels
 
-Each item goes through Phase 4: `kickoff --base <parent>`, then `deliver --no-merge`. The brief to `kickoff` includes the plan-round answers and the line *"no questions tonight: record an assumption instead"*. The owner's "may decide alone" list overrides the default placement below.
+Each Build and Assume-and-show item goes through Phase 4: `kickoff --base <parent>`, then `deliver --no-merge`. The night-time exception below replaces Phase 4's "Never ask" paragraph. The brief to `kickoff` includes the plan-round answers and the line *"no questions tonight: record an assumption instead"*. The owner's "may decide alone" list overrides the default placement below.
 
 - **Build:** units that need no new shared code, test and tooling fixes, and bugs reproduced from the code. A normal PR on the base branch.
 - **Assume and show:** reversible shared-code changes, and the units that need them. Each change is its own PR; its body opens with *"Proposal: approve or reject at merge"*, the assumption, and the caller's code before and after. A unit that needs it stacks on that PR, one level deep at most.
@@ -121,7 +121,7 @@ Each item goes through Phase 4: `kickoff --base <parent>`, then `deliver --no-me
 
 Ask at night only about security, data loss or a broken base branch, and do not wait for the answer. Park the affected units and keep working on the rest.
 
-**Cap work in progress.** Every open PR uses shared resources: CI, preview environments, review attention. Stop opening PRs at the limit agreed in the plan round (default 8). Keep further finished items as local branches, unpublished, and list them in the packet; publishing them later goes through `deliver`.
+**Cap work in progress.** Every open PR uses shared resources: CI, preview environments, review attention. At the limit agreed in the plan round (default 8), stop starting new items. List the rest in the packet as *not started (limit)*; they start once merges free slots.
 
 **Keep a night log** of assumptions, held branches, and idle periods with their causes. The packet is built from it.
 
@@ -131,7 +131,7 @@ Ask at night only about security, data loss or a broken base branch, and do not 
 
 One message, with one ask per root decision, root question first. An ask is the harness's native ask where one exists; otherwise it is a numbered decision in the message. Each carries a recommendation, a confidence level (high, medium or low), the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep it answerable in one sitting, about 10 decisions. Fold PRs that share a root into one ask, and list the rest as parked, each with what would reopen it.
 
-Add **one merge-train ask** listing every ready PR in merge order, bottom-up, with its evidence. This skill does not merge it. The owner's approval starts a separate step: `deliver` without `--no-merge`, one PR at a time, in that order. For a stacked child, follow Phase 5's steps before merging it: delete the merged parent's branch, confirm the child's base, rebase it, and wait for green.
+Add **one merge-train ask** listing the ready **Build** PRs based directly on the base branch, with their evidence. It never includes an Assume-and-show PR or anything stacked on one: those merge one at a time, after their root ask is approved, following Phase 5's stack notes. A rejected root closes its PRs. This skill does not merge. Approving the train starts a separate step: for each listed PR in turn, check out its branch and run `deliver` without `--no-merge`. Stop at the first one `deliver` does not report as merged, and report where the train stopped.
 
 End with the night log, and Phase 5's stack notes for any stacked PRs.
 
@@ -143,4 +143,4 @@ End with the night log, and Phase 5's stack notes for any stacked PRs.
 4. **Delegate.** `kickoff` implements; `deliver` publishes, checks, and enforces the confidentiality gate. This skill never opens a PR, pushes, or runs a check itself.
 5. **Never work on or push to the base branch.**
 6. **A failed item stops its descendants only** — never the independent chains, and never silently.
-7. **Don't expand the list.** Work discovered mid-run becomes a follow-up in the report, not an extra PR nobody asked for. In track mode the list is every unit inside the agreed goal, as the scout found it.
+7. **Don't expand the list.** Work discovered mid-run becomes a follow-up in the report, not an extra PR nobody asked for. In track mode the list is every unit inside the agreed goal, plus the shared-code changes T2 keeps for them.
