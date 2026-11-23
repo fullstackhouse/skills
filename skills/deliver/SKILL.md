@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it and stops at ready-for-review. CI is slow and a bot reviewer is slower; do not lean on either as a first pass.
+description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it and stops at ready-for-review. CI is slow and a bot reviewer is slower; do not lean on either as a first pass. `--merge-only --expect-head <sha>` instead merges an already-approved PR at exactly that head, and nothing else.
 ---
 
 # deliver
@@ -15,9 +15,12 @@ Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to 
 
 **Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 7's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
 
+**Merge-only mode:** `--merge-only --expect-head <sha>` merges an existing PR the owner has approved at that exact head, and changes nothing else. It is the executor behind a batched approval such as `overnight` track mode's merge train. It runs [its own procedure](#merge-only-mode) instead of the phases.
+
 ## Arguments
 
 - **`--no-merge`** — stop at ready-for-review; Phase 7 assesses but never merges. How **kickoff** calls this.
+- **`--merge-only --expect-head <sha>`** — merge an existing PR the owner approved at `<sha>`, without reviewing, fixing or committing anything. See [Merge-only mode](#merge-only-mode). Incompatible with `--no-merge`.
 - **`--base <branch>`** — target `<branch>` instead of the repo default, and compute every diff in the run against it. For stacking.
 - **`--bot-review` / `--no-bot-review`** — force Phase 6b's on-record bot review on or off, overriding the `reviewer` profile knob for this run.
 - **`--review-rounds N`** — cap Phase 3's local review at `N` rounds. **0–10, default 3.** Raise it for a change whose review keeps finding real defects. **Don't lower it to 1 or 2 to save time** — Phase 3 fixes what round 1 raises, and with `--quiet-rounds 1` a confirming round then has to fit inside the budget. (That confirming round is cheap: one reviewer on the fix commits, and it only has to come back free of blockers and majors, not free of nits. It runs only when round 1 fixed a blocker or major; a round 1 that confirmed nothing worse than a minor ends the loop.) At `N=1` any finding at all guarantees `budget-exhausted`, which Phase 7 reports as `blocked`, and the loop's own rules forbid buying more rounds by re-invoking. If you have already reviewed the work, pass `0`, not `1`. **`0` skips the review entirely and forces `--no-merge`** — see Phase 3. A value outside 0–10 is a stop, not a clamp: silently reviewing three times when someone asked for thirty is worse than refusing.
@@ -46,6 +49,23 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
 - **Tracker + its status vocabulary** — from the `## Skill profile` (`tracker`). If the repo documents which states mean *in progress*, *in review* and *done*, this skill moves the task along with the PR (Phases 5b and 7b). If it documents a tracker but no vocabulary, don't guess at state names — report the task's current state in Phase 8 instead.
 
 If a needed value isn't documented and you can't infer it, ask the user rather than guessing.
+
+## Merge-only mode
+
+Run it from the PR's branch, given `--expect-head <sha>`: the head the owner saw when approving. It never runs Phases 1–6b and never commits, reviews or fixes. **The owner's approval of that exact head stands in for Phase 7's review conditions**, and only for that head. A run that would add a single commit stops instead, because the owner did not see it.
+
+1. **Read the PR:** `gh pr view <N> --json headRefOid,baseRefName,state,reviewDecision,labels`. Stop if it is not open, carries a merge-blocking label from the repo's own rules (`do-not-merge`, `blocked`, a QA gate not satisfied), or has an unresolved actionable review thread (Phase 6b's reads).
+2. **Head check.** `headRefOid` must equal `<sha>`. If it differs, report *changed since approval* and stop. Never merge a head the owner did not approve.
+3. **Stacked child whose parent has merged.** When `baseRefName` is a branch whose PR is now `MERGED`:
+   - retarget to the parent's own base (`gh pr edit <N> --base <grandparent>`). The approval of the train that lists both covers this;
+   - rebase only the child's own commits: `git rebase --onto origin/<grandparent> <parent's last head> HEAD`;
+   - **prove the content did not change.** `git diff <parent's last head> <sha> | git patch-id --stable` must equal `git diff origin/<grandparent> HEAD | git patch-id --stable`. If they differ, the rebase changed the code; report *conflict on rebase* and stop;
+   - push with `git push --force-with-lease=<branch>:<sha> origin HEAD:<branch>`. The lease fails if anyone pushed meanwhile.
+
+   The new head is now the approved head, by the patch-id proof. Use it for every check below.
+4. **CI green on that head** (Phase 6's head-commit reading). Wait while checks are pending. If they fail, report and stop: no fixes in this mode.
+5. **Merge:** `gh pr merge <N> --squash --delete-branch --match-head-commit <head>` (add `--admin` only under `ownerCanSelfMerge`, as Phase 7 does). Then confirm `MERGED` as Phase 7 says, and run Phase 7b.
+6. **Report** one of: `merged`, `changed since approval`, `conflict on rebase`, `CI failed`, `blocked: <reason>`.
 
 ## Phases
 
@@ -395,7 +415,7 @@ The handed-up findings are the part a reader most needs and most easily loses. L
 2. **Never push to the default branch.** This skill operates on a feature branch only.
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. This is why Phase 3 passes `--gate scoped`.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
-5. **Never merge on a review that didn't cover HEAD.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `sources.local.reviewed_oid` is the one that counts — the fresh-context review's own coverage, not the newest HEAD some source happened to look at.
+5. **Never merge on a review that didn't cover HEAD.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `sources.local.reviewed_oid` is the one that counts — the fresh-context review's own coverage, not the newest HEAD some source happened to look at. The one exception is merge-only mode, where the owner's approval of that exact head, or of a patch-identical rebase of it, stands in for the review.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Don't expand scope under cover of review feedback.** If a finding asks for a refactor beyond the PR's purpose, it comes back handed up — carry it to the user, don't build it.
 8. **Re-invoke `review-loop` only for a reason a phase names** — Phase 6's behaviour-changing CI fix is the one. Never re-invoke a source that came back `budget-exhausted` hoping for a different answer: that count resumes by design, and past the cap the answer is a human. A source that *converged* gets its budget back, because what brings you here is new commits and they deserve the same scrutiny the first pass got. The cap never relaxes Phase 7's conditions either way.

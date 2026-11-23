@@ -1,6 +1,6 @@
 ---
 name: overnight
-description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. With `--track`, takes a goal instead of a list ("migrate every remaining page", "finish this track tonight"): scouts the whole goal first to find the questions, builds what needs no answer, and wakes the owner to one morning packet. Never merges.
+description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. With `--track`, takes a goal instead of a list ("migrate every remaining page", "finish this track tonight"): scouts the whole goal first to find the questions, builds what needs no answer, and wakes the owner to one morning packet and one merge-train ask. Never merges.
 ---
 
 # overnight
@@ -131,13 +131,13 @@ Ask at night only about security, data loss or a broken base branch, and do not 
 
 One message, with one ask per root decision, root question first. An ask is the harness's native ask where one exists; otherwise it is a numbered decision in the message. Each carries a recommendation, a confidence level (high, medium or low), the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep it answerable in one sitting, about 10 decisions. Fold PRs that share a root into one ask, and list the rest as parked, each with what would reopen it.
 
-List the ready PRs with their evidence, Build PRs first and stacked PRs under their parent with Phase 5's stack notes. This skill does not merge them, and the packet does not batch their merges: each merges by the owner's own request, as in any other run.
+Add **one merge-train ask**. It lists, bottom-up, every ready Build PR and its stacked children, each with its evidence and its **current head SHA**. Assume-and-show PRs, and their children, join only after their root ask is approved, as a new train ask; a rejected root's PRs are listed for the owner to close. This skill merges nothing. Approving the train asks the agent to run, for each listed PR in order, `deliver --merge-only --expect-head <sha>` from that PR's branch. If a PR does not merge, its stacked children are skipped and every independent PR continues (rule 6). The agent reports each PR's outcome.
 
 End with the night log, and Phase 5's stack notes for any stacked PRs.
 
 ## Hard rules
 
-1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands.
+1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands. An approved merge-train ask is the owner's request, carried out by `deliver --merge-only` at the SHAs the owner saw, not by this skill.
 2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive. In track mode an item is one unit or one shared-code change.
 3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption. In track mode the plan round is the evening one; after it, questions wait for the morning packet, except security, data loss and a broken base branch, which are asked without stopping the run.
 4. **Delegate.** `kickoff` implements; `deliver` publishes, checks, and enforces the confidentiality gate. This skill never opens a PR, pushes, or runs a check itself.
