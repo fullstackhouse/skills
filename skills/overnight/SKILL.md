@@ -1,6 +1,6 @@
 ---
 name: overnight
-description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. Never merges.
+description: Take a whole backlog — a list of specs, tickets, or goals — and deliver it unattended as a stack of ready-for-review PRs, one per item. Opens with a single interactive round (the plan, the stack order, and every open question across every item batched together), then runs silent to the end. Use when asked to "do all of this overnight", "work through this list", "ship the whole audit while I sleep", or whenever the input is a list rather than one task. With `--track`, takes a goal instead of a list ("migrate every remaining page", "finish this track tonight"): scouts the whole goal first to find the questions, builds what needs no answer, and wakes the owner to one morning packet and one merge-train ask. Never merges.
 ---
 
 # overnight
@@ -23,6 +23,7 @@ Repo-agnostic, like the rest of the collection. From the consuming repo's `AGENT
 ## Arguments
 
 - **A list of items** in any of these shapes, mixed freely: spec paths, a specs directory to scan, tracker ticket IDs/URLs, a brainstorm brief, or plain prose bullets.
+- **`--track <goal>`** — a goal whose questions don't exist yet, because they only appear while doing the work. Runs [Track mode](#track-mode) instead of the phases below.
 - **Empty** — ask what the list is. Never assemble a backlog by guessing what the repo needs.
 
 ## Phases
@@ -87,11 +88,53 @@ The deliverable is a stack the user can act on in the order it was built:
 - **Where each chain stopped**, and what unblocking it needs.
 - **Follow-ups discovered and deliberately not done.**
 
+## Track mode
+
+For a goal rather than a list: "migrate every remaining screen onto the shared layer", "finish this track". Its questions surface only during the work, one per module, so a plan round up front catches few of them, and asking as they appear turns the owner into the scheduler. Track mode finds them in one pass at night and asks them in one sitting in the morning.
+
+Evening, with the owner: the goal, what is out of scope, what the run may decide alone, and the time the morning packet is due.
+
+### T1. Scout
+
+In throwaway worktrees (never pushed), attempt the **whole** goal roughly: every remaining module or screen, not the first one. Record each gap: what is missing, which units need it, what was tried. Then remove the scout worktrees.
+
+### T2. Challenge every gap
+
+Before a gap becomes a proposal, check in this order, and keep the answers for the packet:
+
+1. Can it be deleted instead?
+2. Does an existing primitive already do it (a field type, a config value, an existing option)?
+3. Does the owning unit own it?
+4. Will improving it later need per-unit edits?
+5. What does the caller's code look like before and after?
+
+Cluster the survivors by **root question**, meaning the decision that, once answered, settles the others. Sub-questions go inside their root and are never asked on their own.
+
+### T3. Build in three levels
+
+- **Decide:** work on top of what already exists, test and tooling fixes, bugs reproduced from the code. Ship each as an ordinary PR.
+- **Assume and show:** reversible choices and small additions to shared code. Build each as its own **draft** PR with the caller's code before and after, stacked at most one level deep. Record the assumption.
+- **Park:** schema, the security model, new concepts, deletions. Write a proposal only, with no code, and move on to other units. Never stop the night on one.
+
+The only questions asked during the night are about security, data loss or a broken base branch. Report a bug only after reproducing it.
+
+**Cap work in progress.** Each open PR uses shared resources: CI minutes, preview environments, review attention. Stop opening PRs at the repo's limit (its profile, else about 8). Hold finished work as pushed branches and list them in the packet.
+
+**Schedule the morning wake-up before the turn ends.** An agent whose turn has ended sleeps until something wakes it, so "I'll post at 07:45" never happens unless a schedule or heartbeat (whatever the harness offers) is set to send that prompt.
+
+### T4. Morning packet
+
+One message, one ask per root decision, ordered root question first. Each carries a recommendation, a confidence level, the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep the packet small enough for one sitting, about 10 decisions. Fold drafts that share a root into one ask, and list the rest as parked with what would reopen them.
+
+Then add **one merge-train ask** that names every ready PR with its evidence. Clicking it is the owner's explicit request to merge exactly those PRs, in that order, each when green. That keeps "never merge without an explicit request" intact while costing one click instead of one per PR.
+
+Finish with the night's assumptions, the branches held without PRs, and the idle time with its causes.
+
 ## Hard rules
 
 1. **Never merge.** Not a single PR, not the trivially green one at the bottom of the stack. The stack exists so that a human's first look happens before anything lands.
 2. **One item, one PR.** Never fold two items into one PR because they were small, and never split one item across PRs to look productive.
-3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption.
+3. **No questions after the plan round.** Everything that needs a human is paid in Phase 3 or becomes a recorded assumption. Track mode has no plan round: it parks the questions until the morning packet, except security, data loss and a broken base branch.
 4. **Delegate.** `kickoff` implements; `deliver` publishes, checks, and enforces the confidentiality gate. This skill never opens a PR, pushes, or runs a check itself.
 5. **Never work on or push to the base branch.**
 6. **A failed item stops its descendants only** — never the independent chains, and never silently.
