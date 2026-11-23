@@ -54,14 +54,15 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 `--merge-only --pr <N> --expect-head <sha>`, plus `--parent <P> --parent-head <psha>` for a PR that was stacked on PR `<P>` at head `<psha>`. The caller (a merge-train approval) supplies all of these; refuse if any is missing, or if other flags are passed with them. The mode adds no change of its own: the only new commits it may create are a patch-identical rebase (step 4). **The owner's approval of that exact head stands in for Phase 7's review conditions, and for nothing else.**
 
-1. **Read the PR before touching git:** `gh pr view <N> --json state,headRefName,headRefOid,baseRefName,reviewDecision,mergeStateStatus,labels`.
+1. **Read the PR before touching git:** `gh pr view <N> --json state,headRefName,headRefOid,baseRefName,reviewDecision,mergeStateStatus,labels,isCrossRepository`.
    - Already `MERGED` with `headRefOid` equal to `<sha>`, or already `MERGED` when `--parent` was given (its merged head is a rebase of `<sha>`): report `merged` and stop. This makes a re-run safe.
    - Not open, a merge-blocking label from the repo's rules (`do-not-merge`, `blocked`, an unmet QA gate), `reviewDecision: CHANGES_REQUESTED`, or an unresolved review thread (`reviewThreads { isResolved }` through `gh api graphql`; read review bodies too, per Phase 6b): report `blocked: <reason>` and stop.
    - `REVIEW_REQUIRED` and `ownerCanSelfMerge` is not true: report `awaiting-review` and stop. A chat approval is not a forge approval.
+   - `headRefName` is the default branch or the resolved base, or the PR comes from a fork (`isCrossRepository`): report `blocked: head is not a feature branch` and stop.
 2. **Head check.** `headRefOid` must equal `<sha>`. If it differs, report `changed since approval` and stop.
 3. **Setup.** Export `SLUG` as Phase 0 does, refuse on a dirty tree, then `git fetch origin` and `git checkout --detach <sha>`. Work on this detached HEAD only: never check out the named branch, which may be checked out in another worktree or have the wrong upstream.
 4. **Parent.**
-   - **No `--parent`:** `baseRefName` must not be the head branch of any PR, open or merged (`gh pr list --state all --head <baseRefName>`). An open one means report `blocked-on-parent-PR #<n>`. A merged one means report `blocked: base is a merged branch` (merging into it would ship nothing). Then stop.
+   - **No `--parent`:** run Phase 7's stacked-base check on `baseRefName`, short-circuit included. An open PR there means report `blocked-on-parent-PR #<n>` and stop.
    - **`--parent` given:**
      - The parent PR must be `MERGED`, or report `blocked-on-parent-PR #<P>` and stop.
      - `baseRefName` must be the parent's `headRefName` or the parent's `baseRefName`, or report `blocked: not stacked on #<P>`.
@@ -77,7 +78,7 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
      The rebased head is approved by the proof. Use it as `<sha>` from here on.
 5. **CI green on `<sha>`.** Read the check-runs as Phase 6 does. Wait until the required checks exist on that head (an empty list right after a push is not green), then until they finish. On a failure, report `CI failed` and stop: no fixes in this mode.
 6. **Merge.**
-   - Re-read `gh pr view <N> --json headRefOid,mergeStateStatus`, waiting out `UNKNOWN`. A different head means `changed since approval`; `BEHIND` means `blocked: base moved` (updating it would add a commit the owner did not see).
+   - Re-read the PR with step 1's fields and repeat step 1's blocking checks, since a label or review can arrive during the CI wait. Wait out `mergeStateStatus: UNKNOWN`. A different head means `changed since approval`; `BEHIND` means `blocked: base moved` (updating it would add a commit the owner did not see).
    - Then run `gh pr merge <N> --squash --delete-branch --match-head-commit <sha>`, adding `--admin` only under `ownerCanSelfMerge`, as Phase 7 does.
    - Confirm `MERGED` as Phase 7 says. If the remote branch survived, remove it with `git push origin --delete <headRefName>`.
    - Run Phase 7b.
