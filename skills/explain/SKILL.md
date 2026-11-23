@@ -138,6 +138,8 @@ corrections applied: the question as the title, options lettered with the status
 the recommendation marked, and the Short's diagram reused rather than redrawn. Every option
 gets a letter, including those not on the old buttons — the asker adds buttons to match. It doesn't count
 toward the Short's word budget. It is chat output: don't edit an ask you didn't create.
+Anything else you need from the human (approval to send the rewrite, a follow-up) goes
+through the host's asks tool when it has one (`ask_create`), not only the chat.
 
 ## Hard rules
 
