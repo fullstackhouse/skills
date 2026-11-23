@@ -7,7 +7,7 @@ description: Boot a change on a throwaway instance, prove login actually works, 
 
 You are running the **om-test-drive** skill. Goal: put a running instance of the change in the user's hands, with working credentials, the data that makes the change visible, and a route through it — so they can form their own opinion by clicking, not by reading a diff.
 
-This is **not** `explain` (which translates a diff into a merge decision without running anything) and **not** an automated-QA skill (which drives a browser and posts pass/fail evidence to a pipeline). You do not drive the UI. You boot, you prove auth, you seed, you write the route — the human does the clicking.
+This is **not** `explain` (which explains a change — or any other target — in plain words without running anything) and **not** an automated-QA skill (which drives a browser and posts pass/fail evidence to a pipeline). You do not drive the UI. You boot, you prove auth, you seed, you write the route — the human does the clicking.
 
 **Scope: Open Mercato first, and honestly so.** The boot step degrades to any repo that documents a disposable environment, but the auth and seeding phases are written around Open Mercato's routes. On another stack this skill boots and then needs its profile to supply the auth contract — without that, stop and say so rather than half-driving an app you can't log into.
 

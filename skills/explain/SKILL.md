@@ -16,8 +16,8 @@ this"; no picture of the whole; 4–6k-character walls without a diagram; option
 granted the feature behind them is worth keeping.
 
 **Read-only on the code.** Never edit, stage, commit, push, request reviews or merge. The only
-files you may write are `EXPLAIN.md` (and an optional HTML figure) in the directory the user is
-talking to you from — not in the target's repo when that is elsewhere.
+files you may write are `EXPLAIN.md` (and an optional HTML figure) in your working directory —
+not in the target's repo when that is elsewhere. Never stage or commit them.
 
 ## 1. Resolve the target
 
@@ -25,7 +25,7 @@ talking to you from — not in the target's repo when that is elsewhere.
 |---|---|
 | PR number/URL, branch, commit, range | `gh pr view <N> --json title,body,state,mergedAt,headRefName,baseRefName` + `gh pr diff <N>`; `git show` / `git diff <range>` |
 | nothing, on a feature branch / with uncommitted work | the open PR (`gh pr view`), else `git diff <default>...HEAD`, else `git diff` + `git diff --staged` |
-| an ask id ("A30") | the asks tool if present (`ask_list`, scope workspace, status all); else ask for its text — don't guess it |
+| an ask id ("A30") | the asks or tracker tool if present (Paseo: `ask_list`, status all); else ask for its text — don't guess it |
 | ask content in the prompt ("explain this ask: …") | that text is the target; needs no other tool. Follow its links (PR, commit, spec) for facts |
 | a spec, doc or ticket | read it, then the code or decision it points at |
 | a bug (issue, error, symptom) | the report, logs and the code path that produces it |
@@ -60,7 +60,7 @@ Don't stop to ask.
 
 ## 3. Short — always, first
 
-≤ ~250 words plus one diagram, in the language the user wrote in. **No file paths, code
+≤ ~250 words (~350 for a decision) plus one diagram, in the language the user wrote in. **No file paths, code
 identifiers or internal jargon** — name things by what they do for a person. Define an
 unavoidable term once, in passing. More risks or facts than fit → keep the ones a person
 would notice; the rest go to Detail.
@@ -73,7 +73,8 @@ would notice; the rest go to Detail.
    target already uses one, reuse it. Keep it to the end; never mix in a second one.
 4. **Why we need it** — what goes wrong, or what it costs, if nothing changes.
 5. **One diagram** — Mermaid `flowchart TD`, ≤ 12 nodes, quoted plain labels, every arrow
-   labelled with what passes along it. A change or decision: two subgraphs, `today` and
+   labelled with what passes along it. Where Mermaid doesn't render (a plain terminal), draw
+   the same as ASCII. A change or decision: two subgraphs, `today` and
    `after` (`before` and `now` once merged). A term or system: the whole picture with the
    subject in its place. A screen: an ASCII mockup instead. If drawing it shows a simpler
    design than the ones on the table, say so — that is a good outcome, not a detour.
@@ -85,8 +86,8 @@ would notice; the rest go to Detail.
      last**, priced like the rest (its cost is usually delay). When an ask's buttons are fixed,
      keep its options in order and add the others as "Not on the buttons: …". Then ➡️ **one**
      recommendation, confidence (high/normal/low), and what would change your mind.
-   - **Change, unmerged** — what it does for the person; what's tested and what's not,
-     specifically; the residual risk; ➡️ **merge / merge after X / don't merge yet**,
+   - **Change, unmerged** — what it does for the person; what's tested and what's not, by
+     behaviour in plain words ("nothing tests a buyer with no store rules"), test names to Detail; the residual risk; ➡️ **merge / merge after X / don't merge yet**,
      confidence, and the one biggest reason.
    - **Change, merged** — what is different now; tested and not; ➡️ **keep / follow up with X /
      revert**, confidence, what would make you revisit.
@@ -105,9 +106,10 @@ Example (decision, Short):
 > **Who it touches:** everyone who changes teams, ~30 people a month (access log).
 > **Picture it:** Ben left the finance team on Monday. His folders no longer show its files, but
 > searching *budget* still lists them — like changing the front-door lock while his old badge
-> still opens the side entrance.
+> still opens the side entrance. Nothing is leaked yet, but one search can show a salary file.
 > *(today/after diagram)*
-> **A** — search checks the live access list on every query: always right, a little slower.
+> **A** — search checks the live access list on every query: always right, a little slower;
+> lets us delete the nightly permission re-sync.
 > **B** — rebuild the search index on every access change: fast, wrong for minutes after each change.
 > **C** — drop search inside team folders: nothing to keep in step; people browse instead.
 > **D (status quo)** — people who changed teams keep finding files they can no longer open.
@@ -132,7 +134,7 @@ may go in a small self-contained `.html` beside it.
 After the Short, offer **a rewritten ask body** — the Short as paste-ready markdown, with any
 corrections applied: the question as the title, options lettered with the status quo last,
 the recommendation marked, and the Short's diagram reused rather than redrawn. It doesn't count
-toward the Short's word budget. Don't edit an ask you didn't create; hand over the text.
+toward the Short's word budget. It is chat output: don't edit an ask you didn't create.
 
 ## Hard rules
 
