@@ -54,24 +54,25 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 `--merge-only --pr <N> --expect-head <sha>`, plus `--parent <P> --parent-head <psha>` for a PR that was stacked on PR `<P>` at head `<psha>`. The caller (a merge-train approval) supplies all of these; refuse if any is missing, or if other flags are passed with them. The mode adds no change of its own: the only new commits it may create are a patch-identical rebase (step 4). **The owner's approval of that exact head stands in for Phase 7's review conditions, and for nothing else.**
 
-1. **Read the PR before touching git:** `gh pr view <N> --json state,headRefName,headRefOid,baseRefName,reviewDecision,mergeStateStatus,labels,isCrossRepository`.
-   - Already `MERGED` with `headRefOid` equal to `<sha>`, or already `MERGED` when `--parent` was given (its merged head is a rebase of `<sha>`): report `merged` and stop. This makes a re-run safe.
+1. **Read the PR before touching git:** `gh pr view <N> --json state,headRefName,headRefOid,baseRefName,reviewDecision,mergeStateStatus,labels,isCrossRepository,mergeCommit`.
+   - Already `MERGED` with `headRefOid` equal to `<sha>`: report `merged` and stop. Already `MERGED` when `--parent` was given: after step 3's fetch, compare `git diff <mergeCommit>^ <mergeCommit>` with `git diff <psha> <sha>` by `git patch-id --verbatim`. If they are equal, report `merged`; otherwise report `blocked: merged with a different change`. Either way, stop. This makes a re-run safe.
    - Not open, a merge-blocking label from the repo's rules (`do-not-merge`, `blocked`, an unmet QA gate), `reviewDecision: CHANGES_REQUESTED`, or an unresolved review thread (`reviewThreads { isResolved }` through `gh api graphql`; read review bodies too, per Phase 6b): report `blocked: <reason>` and stop.
    - `REVIEW_REQUIRED` and `ownerCanSelfMerge` is not true: report `awaiting-review` and stop. A chat approval is not a forge approval.
    - `headRefName` is the default branch or the resolved base, or the PR comes from a fork (`isCrossRepository`): report `blocked: head is not a feature branch` and stop.
 2. **Head check.** `headRefOid` must equal `<sha>`. If it differs, report `changed since approval` and stop.
-3. **Setup.** Export `SLUG` as Phase 0 does, refuse on a dirty tree, then `git fetch origin` and `git checkout --detach <sha>`. Work on this detached HEAD only: never check out the named branch, which may be checked out in another worktree or have the wrong upstream.
+3. **Setup.** Export `SLUG` as Phase 0 does, then `git fetch origin`, `WT=$(mktemp -d)` and `git worktree add --detach "$WT" <sha>`. Run every later git command inside `$WT`, and run `git worktree remove --force "$WT"` on every exit from here on. A throwaway detached worktree never touches the caller's checkout, never checks out the named branch (which may be checked out elsewhere, or have the wrong upstream), and is not blocked by a dirty tree.
 4. **Parent.**
-   - **No `--parent`:** run Phase 7's stacked-base check on `baseRefName`, short-circuit included. An open PR there means report `blocked-on-parent-PR #<n>` and stop.
-   - **`--parent` given:**
+   - **No `--parent`:** run Phase 7's stacked-base check on `baseRefName`, short-circuit included. An open PR there means report `blocked-on-parent-PR #<n>` and stop. Behind the same short-circuit, also check for a dead base. Look for a same-repository merged PR whose head is this branch (`gh pr list --state merged --head <baseRefName> --json headRefOid,isCrossRepository`). If its `headRefOid` equals the current `origin/<baseRefName>`, the branch was merged and never deleted, and merging into it would ship nothing. Report `blocked: base is a merged branch` and stop.
+   - **`--parent` given:** read the parent with `gh pr view <P> --json state,headRefName,baseRefName,headRefOid,mergeCommit`.
      - The parent PR must be `MERGED`, or report `blocked-on-parent-PR #<P>` and stop.
+     - `<psha>` must equal the parent's `headRefOid`, or report `blocked: parent head mismatch` and stop. A wrong `<psha>` would make the rebase drop part of the child. The train passes parents only one level deep, so a parent is never rebased by this mode.
      - `baseRefName` must be the parent's `headRefName` or the parent's `baseRefName`, or report `blocked: not stacked on #<P>`.
      - `<psha>` must be an ancestor of `<sha>` (`git merge-base --is-ancestor`), or report `blocked: not stacked on the parent's final head`.
 
      Let `<base>` be the parent's `baseRefName`. Then, in this order:
-     1. `git fetch origin <base>`, and check that the parent's `mergeCommit` is an ancestor of `origin/<base>`.
-     2. `git rebase --onto origin/<base> <psha>`, still on the detached HEAD. On any conflict, run `git rebase --abort`, report `conflict on rebase` and stop. **Never resolve a conflict in this mode.**
-     3. Prove the patch is unchanged, with `set -o pipefail`: `OLD=$(git diff <psha> <sha> | git patch-id --verbatim)` and `NEW=$(git diff origin/<base> HEAD | git patch-id --verbatim)`. Both must be non-empty and equal. `--verbatim` counts whitespace and needs git ≥ 2.39. Any error, empty value or mismatch means: `git checkout --detach <sha>`, report `conflict on rebase`, stop.
+     1. `git fetch origin <base>`, and check that the parent's `mergeCommit` is an ancestor of `origin/<base>`. If the fetch or the check fails, report `blocked: parent not on <base>` and stop.
+     2. `git -c rebase.updateRefs=false rebase --onto origin/<base> <psha>`, still on the detached HEAD. On any conflict, run `git rebase --abort`, report `conflict on rebase` and stop. **Never resolve a conflict in this mode.**
+     3. Prove the patch is unchanged, in one shell invocation: `set -o pipefail; OLD=$(git diff <psha> <sha> | git patch-id --verbatim) && NEW=$(git diff origin/<base> HEAD | git patch-id --verbatim)`. Both must be non-empty and equal. `--verbatim` counts whitespace and needs git ≥ 2.39. Any error, empty value or mismatch means: `git checkout --detach <sha>`, report `conflict on rebase`, stop.
      4. Push to the named ref, never with a bare refspec: `git push --force-with-lease=refs/heads/<headRefName>:<sha> origin HEAD:refs/heads/<headRefName>`. The lease fails if anyone else pushed.
      5. If `baseRefName` is not already `<base>`, run `gh pr edit <N> --base <base>`. The forge usually retargeted it when the parent's branch was deleted.
 
@@ -82,7 +83,7 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
    - Then run `gh pr merge <N> --squash --delete-branch --match-head-commit <sha>`, adding `--admin` only under `ownerCanSelfMerge`, as Phase 7 does.
    - Confirm `MERGED` as Phase 7 says. If the remote branch survived, remove it with `git push origin --delete <headRefName>`.
    - Run Phase 7b.
-7. **Report** one of: `merged`, `changed since approval`, `blocked-on-parent-PR #<n>`, `conflict on rebase`, `CI failed`, `awaiting-review`, or `blocked: <reason>`.
+7. **Report** one of: `merged`, `changed since approval`, `blocked-on-parent-PR #<n>`, `conflict on rebase`, `CI failed`, `awaiting-review`, or `blocked: <reason>`. Once step 4.4 has pushed, name the rebased head in every report: the owner re-approves that head if the run stopped later.
 
 ## Phases
 
