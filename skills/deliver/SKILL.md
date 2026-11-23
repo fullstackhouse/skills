@@ -58,6 +58,8 @@ If a needed value isn't documented and you can't infer it, ask the user rather t
 
 The owner's approval of that head, or of a patch-identical rebase of it, replaces Phase 7's review, size and `start-sha` conditions. Steps 1–6 are the whole gate. The mode adds no change of its own: the only new commits it may create are a stacked child's patch-identical rebase.
 
+Export `SLUG` as Phase 0 does before step 1; any `gh api` error in this mode means `blocked: <error>`.
+
 **Release target** means the default branch, or the base from tiers 2–4 of the PR-base list in Project specifics. **Gather Project specifics first:** this mode uses `ownerCanSelfMerge` and the repo's merge-blocking labels.
 
 **Rebase-and-prove `(<from>, <onto>)`.** Step 4 uses this procedure, run inside `$WT`:
@@ -65,12 +67,12 @@ The owner's approval of that head, or of a patch-identical rebase of it, replace
 2. In one shell invocation:
    ```bash
    set -o pipefail
-   OLD=$(git diff --no-ext-diff --no-textconv --binary <from> <sha> | git patch-id --verbatim) &&
-   NEW=$(git diff --no-ext-diff --no-textconv --binary origin/<onto> HEAD | git patch-id --verbatim)
+   OLD=$(git diff --no-color --no-ext-diff --no-textconv --binary <from> <sha> | git patch-id --verbatim) &&
+   NEW=$(git diff --no-color --no-ext-diff --no-textconv --binary origin/<onto> HEAD | git patch-id --verbatim)
    ```
    Both values must be non-empty and equal. `--verbatim` counts whitespace and needs git ≥ 2.39. On any error, an empty value or a mismatch, report `blocked: patch changed on rebase` and stop.
 3. If `baseRefName` is not `<onto>`, run `gh pr edit <N> --base <onto>`. If that fails, report `blocked: retarget failed` and stop. Retarget before pushing, so the CI the push triggers runs against the right base.
-4. Push to the named ref, never with a bare refspec: `git push --force-with-lease=refs/heads/<headRefName>:<sha> origin HEAD:refs/heads/<headRefName>`. The lease fails if anyone else pushed. If the push fails, restore the base (`gh pr edit <N> --base <old baseRefName>`), report `changed since approval` and stop.
+4. Push to the named ref, never with a bare refspec: `git push --force-with-lease=refs/heads/<headRefName>:<sha> origin HEAD:refs/heads/<headRefName>`. The lease fails if anyone else pushed. If the push fails, restore the old base when it still exists and differs from `<onto>` (`gh pr edit <N> --base <old baseRefName>`). Then report `changed since approval` if the lease was rejected (`stale info` or `rejected`), otherwise `blocked: push failed: <git message>`, and stop.
 5. The rebased head is approved by the proof. Use it as `<sha>` from here on, and name it in every later report.
 
 **Steps:**
@@ -82,7 +84,7 @@ The owner's approval of that head, or of a patch-identical rebase of it, replace
    Then, in order:
    - **Already `MERGED`:**
      - `headRefOid` equals `<sha>`: report `merged`.
-     - Otherwise, with `--parent`: fetch `<sha>`, `<psha>` and `mergeCommit.oid`. If any is missing, report `blocked: cannot verify the merged change`. If both are present, compare `git diff <mergeCommit.oid>^ <mergeCommit.oid>` with `<psha>..<sha>` by patch-id: equal means `merged`, different means `blocked: merged with a different change`.
+     - Otherwise, with `--parent`: fetch `<sha>`, `<psha>` and `mergeCommit.oid`. If any is missing, report `blocked: cannot verify the merged change`. If all three are present, compare `git diff <mergeCommit.oid>^ <mergeCommit.oid>` with `<psha>..<sha>` by patch-id: equal means `merged`, different means `blocked: merged with a different change`.
      - Otherwise: report `blocked: merged with a different change`.
 
      Stop in every case.
@@ -94,7 +96,7 @@ The owner's approval of that head, or of a patch-identical rebase of it, replace
    - **Review required:** `REVIEW_REQUIRED` and `ownerCanSelfMerge` is not true. Report `awaiting-review` and stop; a chat approval is not a forge approval.
    - **Not a feature branch:** `headRefName` is a release target, or a protected branch (`gh api repos/$SLUG/branches/<headRefName> --jq .protected`), or the PR comes from a fork. Report `blocked: head is not a feature branch` and stop.
 2. **Head check.** `headRefOid` must equal `<sha>`. If it differs, report `changed since approval` and stop.
-3. **Setup.** Export `SLUG` as Phase 0 does, then:
+3. **Setup.**
    ```bash
    git fetch origin
    WT=$(mktemp -d)
@@ -111,7 +113,7 @@ The owner's approval of that head, or of a patch-identical rebase of it, replace
      - `git fetch origin <base>` fails, or the parent's `mergeCommit.oid` is not an ancestor of `origin/<base>`: `blocked: parent not on <base>`. Here `<base>` is the parent's `baseRefName`.
 
      Then decide whether to rebase:
-     - The parent's merge commit is already an ancestor of `<sha>`: a re-approved, already-rebased head. Skip the rebase; if `baseRefName` is still the parent's `headRefName`, retarget it to `<base>` (`gh pr edit <N> --base <base>`, and on failure `blocked: retarget failed`).
+     - The parent's merge commit is already an ancestor of `<sha>`: a re-approved, already-rebased head. Skip the rebase; if `baseRefName` is still the parent's `headRefName`, retarget it to `<base>` (`gh pr edit <N> --base <base>`, and on failure `blocked: retarget failed`). A retarget does not re-run CI, so after one, re-run the head's latest workflow runs (`gh run rerun <id>`) before step 5.
      - `<psha>` is an ancestor of `<sha>`: run rebase-and-prove(`<psha>`, `<base>`).
      - Neither: report `blocked: not stacked on the parent's final head` and stop.
 5. **Every check green on `<sha>`.** This is hard rule 4, which still applies here. Wait until the head has at least one check, polling for up to 10 minutes; with none by then, report `awaiting-CI` and stop. Then run `gh pr checks <N> --watch`, which covers every check, required or not, and commit statuses too. Confirm the result against the head commit's check-runs as Phase 6 does. A failure means `CI failed`: report it and stop, with no fixes in this mode.
@@ -119,15 +121,15 @@ The owner's approval of that head, or of a patch-identical rebase of it, replace
    - Re-read the PR and repeat step 1's checks, since a label or review can arrive during the CI wait. Then read `mergeStateStatus`, waiting up to 5 minutes while it is `UNKNOWN`:
      - a different head: `changed since approval`;
      - `CLEAN` or `HAS_HOOKS`: merge;
-     - `BLOCKED`, and the only unmet rule is a review (`reviewDecision: REVIEW_REQUIRED`, every check green per step 5) and `ownerCanSelfMerge` is true: merge with `--admin`;
+     - `BLOCKED` with `reviewDecision: REVIEW_REQUIRED` and `ownerCanSelfMerge` true: first list the base's required checks, from classic protection (`gh api repos/$SLUG/branches/<baseRefName>/protection/required_status_checks`, where a 404 means none) and from rulesets (`gh api repos/$SLUG/rules/branches/<baseRefName>`). Each must have succeeded on `<sha>`. A required check that never ran, or ran late, is not a pass. Only then merge with `--admin`; otherwise report `blocked: branch protection`;
      - any other `BLOCKED`: `blocked: branch protection`;
-     - `UNSTABLE`: `CI failed`;
+     - `UNSTABLE`: go back to step 5 once, since a late check may still be running; still `UNSTABLE` means `CI failed`;
      - `BEHIND`: `blocked: base moved`. Bringing the branch up to date would change a head the owner approved, so the owner re-approves the updated head;
      - `DIRTY`: `blocked: conflict with base`;
      - anything else: `blocked: <status>`.
    - Run `gh pr merge <N> --squash --match-head-commit <sha>`, plus `--admin` only in the case above. Don't use `--delete-branch`: it also deletes the local branch, which may be checked out elsewhere.
    - Confirm `MERGED` as Phase 7 says. If it is not merged, report `blocked: merge refused: <gh message>` and stop.
-   - Then delete the remote branch with `git push origin --delete <headRefName>`. The forge retargets any PR stacked on it.
+   - Then delete the remote branch with `git push origin --delete <headRefName>`. If it is already gone (the repo deletes head branches on merge), that counts as done. The forge retargets any PR stacked on it.
    - Run Phase 7b, using the PR `body` read in step 1.
 7. **Report** one of:
    - `merged`
