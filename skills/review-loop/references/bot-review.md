@@ -94,7 +94,7 @@ gh pr view <N> --json reviews \
 
 Every ~60s for up to ~10 minutes. Same single-quoted `env.` filter, for the reason above.
 
-**Make the whole poll one wake.** Each poll that wakes the agent re-reads the whole conversation, so ten polls from the main thread cost ten full turns. Hand the poll to a foreground subagent on the host's cheapest model (in Claude Code: `model: "haiku"`). Give it the two queries in this section and the quota check below, and ask it to reply with one line: the matching review's id, `quota`, or `timeout`. Without subagents, run the whole poll as one foreground loop in a single blocking call. Never use a background job or a timer that wakes you for each poll.
+**Make the whole poll one wake.** Each poll that wakes the agent re-reads the whole conversation, so ten polls from the main thread cost ten full turns. Hand the poll to a foreground subagent on the host's cheapest model (in Claude Code: `model: "haiku"`). Give it the two queries in this section and the quota check below, and ask it to reply with one line: the matching review's id, `quota`, or `timeout`. Without subagents, run the whole poll as one foreground loop in a single blocking call, with the tool timeout raised to its 600 s maximum (Claude Code's Bash tool defaults to 120 s), so cap the loop at 9 minutes and run it twice for the full ten. A `sleep` inside that loop is fine: it is one call and one wake. Never use a background job or a timer that wakes you for each poll.
 
 **`submittedAt` alone does not answer "reviewed at this HEAD".** A review requested before
 a push lands *after* it — newer than `$PRIOR`, and still written against superseded code.
