@@ -116,7 +116,7 @@ Export `SLUG` as Phase 0 does before step 1; any `gh api` error in this mode mea
      - The parent's merge commit is already an ancestor of `<sha>`: a re-approved, already-rebased head. Skip the rebase; if `baseRefName` is still the parent's `headRefName`, retarget it to `<base>` (`gh pr edit <N> --base <base>`, and on failure `blocked: retarget failed`). A retarget does not re-run CI, so after one, re-run the head's latest workflow runs (`gh run rerun <id>`) before step 5.
      - `<psha>` is an ancestor of `<sha>`: run rebase-and-prove(`<psha>`, `<base>`).
      - Neither: report `blocked: not stacked on the parent's final head` and stop.
-5. **Every check green on `<sha>`.** This is hard rule 4, which still applies here. Wait until the head has at least one check, polling for up to 10 minutes; with none by then, report `awaiting-CI` and stop. Then run `gh pr checks <N> --watch`, which covers every check, required or not, and commit statuses too. Confirm the result against the head commit's check-runs as Phase 6 does. A failure means `CI failed`: report it and stop, with no fixes in this mode.
+5. **Every check green on `<sha>`.** This is hard rule 4, which still applies here. Wait as **Waiting on CI** says; its `no-checks` answer means report `awaiting-CI` and stop, and `head-moved` means `changed since approval`. `gh pr checks` covers every check, required or not, and commit statuses too. Confirm the result against the head commit's check-runs as Phase 6 does. A failure means `CI failed`: report it and stop, with no fixes in this mode.
 6. **Merge.**
    - Re-read the PR and repeat step 1's checks, since a label or review can arrive during the CI wait. Then read `mergeStateStatus`, waiting up to 5 minutes while it is `UNKNOWN`:
      - a different head: `changed since approval`;
@@ -329,9 +329,7 @@ Move the task named by `Closes`. A `Part of` / `Relates to` task belongs to work
 
 ### 6. Handle CI failures
 
-```bash
-gh pr checks <N> --watch
-```
+Wait for CI as **Waiting on CI** (below Phase 8) says. Its result reads like `gh pr checks <N> --watch` output, and is checked the same way:
 
 **Confirm a "failed" entry against the head commit before believing it.** `gh pr checks` renders a job's `skipped` conclusion in the same bucket as a failure, so a workflow's `if: failure()` notification job — which is skipped on every successful run, by design — prints as `[FAIL]` on a perfectly green PR:
 
@@ -434,7 +432,7 @@ Merge condition (ALL must hold):
   A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself. (Merge-only mode's rebase-and-prove is the one exception: the owner's approval covers that retarget.) On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up. Report it as `blocked-on-parent-PR` with the parent's number — a healthy stack waiting its turn, not a failure. AND
 - ≤ ~100 lines changed since `start-sha`, AND
 - No new files outside what was already touched at `start-sha`, AND
-- All CI checks on the PR are green (`gh pr checks <N>` — wait for them, and resolve any `[FAIL]` against the head commit's check-runs per Phase 6 before calling it red), AND
+- All CI checks on the PR are green (`gh pr checks <N>` — wait for them as **Waiting on CI** says, and resolve any `[FAIL]` against the head commit's check-runs per Phase 6 before calling it red), AND
 - **The remote carries what you reviewed and fixed:**
 
   ```bash
@@ -484,6 +482,18 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`, or "no local review ran (`--review-rounds 0`)" when it was skipped; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
 
 The handed-up findings are the part a reader most needs and most easily loses. List them as decisions, not as a summary of a summary.
+
+## Waiting on CI
+
+Every CI wait in this skill goes through here: Phase 6, Phase 7's green check, and merge-only step 5. A wait costs nothing while it blocks. Each *wake* does cost, because a wake re-reads the whole conversation. A delivery session often carries a few hundred thousand tokens, so a wait that wakes the agent every minute can cost more than the CI run it watches. One wake when CI settles is the goal.
+
+1. **Hand the wait to a subagent when the host has them.** Start one in the foreground on the host's cheapest model (in Claude Code: `model: "haiku"`), with this brief and nothing else:
+
+   > Wait for CI on PR `<N>` in `<SLUG>`, head `<sha>`. Set every shell call's tool timeout to 600000 ms. First wait for a check to exist, since `gh pr checks --watch` exits at once while none is registered, which is normal for up to a minute after a push. Run this as one command: `for i in $(seq 20); do n=$(( $(gh api repos/<SLUG>/commits/<sha>/check-runs --jq .total_count) + $(gh api repos/<SLUG>/commits/<sha>/status --jq .total_count) )); [ "$n" -gt 0 ] && break; sleep 30; done; echo "$n"`. If it prints `0`, stop. Otherwise run `timeout 540 gh pr checks <N> --repo <SLUG> --watch --interval 30` and repeat it while checks are pending, for at most 45 minutes; if `timeout` is not installed, run the same command without it. Before each repeat, read `gh pr view <N> --repo <SLUG> --json headRefOid`. Never use a background job or anything that wakes you later. Reply with one line only: `green <sha>`; `failed <sha>:` followed by `<check> <run-id>` for each failing check; `no-checks <sha>`; `head-moved <new-sha>`; or `timeout <sha>`.
+
+   The reply is the only thing that enters your context. Treat a `failed` as Phase 6 treats a `[FAIL]`: confirm it against the head's check-runs before acting on it.
+2. **Without subagents, wait in the foreground yourself.** Run the same commands as the brief, each as one blocking call with the tool timeout raised to 600 s (Claude Code's Bash tool defaults to 120 s and kills anything longer). The `sleep` inside the first-check loop is fine there: the whole loop is one call and one wake. Never move the wait into a background job, and never use a timer or a separate call per poll that wakes you. Each such wake is a full turn.
+3. **A host's PR notifications are not the wait.** Some hosts tell the agent when a PR's checks change (Paseo's asks tool, for one, with `subscribe: true`). Don't end your turn to wait for that message. It polls on its own schedule, does not say which commit passed, and stays silent when a fast run after a push ends in the same state as the run before. If a message like that arrives for a head you have already settled, it is a duplicate: note it in one line, without re-reading the PR.
 
 ## Hard rules
 
