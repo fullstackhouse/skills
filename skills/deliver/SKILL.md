@@ -79,7 +79,7 @@ Export `SLUG` as Phase 0 does before step 1; any `gh api` error in this mode mea
 ```bash
 "${CLAUDE_SKILL_DIR}/scripts/same-change.sh" origin/<baseRefName> <approved> <head>
 ```
-It compares `git patch-id --verbatim` of `git diff <merge-base>..<head>` for each head. Hunks in `*.md` files and under any `docs/` or `.ai/` directory may differ, so a doc-only conflict resolution counts as unchanged; every other hunk must match exactly. Its `differs:` lines name the files the update touched.
+It compares `git patch-id --verbatim` of `git diff <merge-base>..<head>` for each head. Hunks in `*.md` files and under any `docs/` or `.ai/` directory may differ, so a doc-only conflict resolution counts as unchanged. Agent instructions (`AGENTS.md`, `CLAUDE.md`, `SKILL.md`, `.ai/skills/`, `.agents/`) count as code; every other hunk must match exactly. Its `differs:` lines name the files the update touched.
 - Exit 0, `same change`: `<head>` is approved. Use it as `<sha>` from here on (once `$WT` exists, `git checkout --detach <sha>` in it), and keep the `differs:` lines for the report.
 - Exit 1, `changed`: `changed since approval`.
 - Exit 2: `blocked: <its error>`.

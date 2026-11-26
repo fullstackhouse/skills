@@ -6,7 +6,8 @@
 # Compares the PR's own diff (merge-base with <base-ref> .. head) at both heads, not the
 # SHAs, so a rebase or a merge of the base that leaves the change alone still matches.
 # Hunks in docs/spec files (*.md, docs/, .ai/) may differ: a doc-only conflict resolution
-# counts as unchanged. Everything else must match exactly, whitespace included.
+# counts as unchanged. Agent instructions (AGENTS.md, CLAUDE.md, SKILL.md, .ai/skills/,
+# .agents/) count as code. Everything else must match exactly, whitespace included.
 # Prints the files whose own diff differs between the heads (what the update touched).
 # Exit 0: same change. 1: different. 2: error (a missing object, a bad ref).
 # Read-only; run it in any checkout that has fetched both heads and <base-ref>.
@@ -33,8 +34,10 @@ while IFS= read -r f; do
 done <<<"$files"
 
 code=(. ':(exclude,glob)**/*.md' ':(exclude,glob)**/docs/**' ':(exclude,glob)**/.ai/**')
+agent=(':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' ':(glob)**/SKILL.md' ':(glob)**/.ai/skills/**' ':(glob)**/.agents/**')
 a=$(id "$approved" "${code[@]}") && b=$(id "$head" "${code[@]}") || fail "cannot diff the code"
-if [ "$a" = "$b" ]; then
+c=$(id "$approved" "${agent[@]}") && d=$(id "$head" "${agent[@]}") || fail "cannot diff the agent instructions"
+if [ "$a" = "$b" ] && [ "$c" = "$d" ]; then
   echo "same change"
 else
   echo "changed"
