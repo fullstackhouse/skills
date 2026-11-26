@@ -4,8 +4,9 @@ description: >-
   Take one artifact that arrived from outside — a blog post, a product launch, a Slack
   thread, a newsletter, a competitor's announcement, a link someone sent with no comment —
   read it properly, and decide whether you, or the project or company behind the current
-  context, needs to do anything about it. Produces a one-screen note with a verdict and at
-  most one routed next step. Use when invoked as "/radar", when handed a link with no
+  context, needs to do anything about it. Produces a note with the verdict up front, a
+  detailed account of what the artifact actually says (its examples, not just conclusions),
+  and at most one routed next step. Use when invoked as "/radar", when handed a link with no
   question attached, or when asked "what does this mean for us", "should we use this",
   "research this post and see if we should do anything about it", "is this worth reacting
   to". Read-only apart from the note until the verdict is confirmed.
@@ -25,8 +26,9 @@ whole point — see step 3.
 **The failure it prevents is the long session that commits nothing.** Research an
 interesting artifact with no forced verdict and you get a hundred messages, a feeling of
 having thought about it, and no record — so the same link arrives in six months and costs
-the same hours. The deliverable is not the research. It is a one-screen note with a
-verdict, and, when the verdict earns it, exactly one routed next step.
+the same hours. The deliverable is not the research. It is a note with a verdict, an
+account of the artifact good enough that nobody has to open it again, and, when the verdict
+earns it, exactly one routed next step.
 
 Everything except the note and its index row is **read-only until the user confirms the
 verdict**.
@@ -73,6 +75,9 @@ add a dated line to it instead of writing a second one.
 - **Open it.** If it is paywalled, JS-only, or the fetch fails, say so and stop. A summary
   written from a title and a URL is the single worst output this skill can produce, and it
   arrives looking exactly like a real one.
+- **A recording is a transcript first.** Video, podcast, or a call → run `video-brief`'s
+  `scripts/transcribe.sh <url>` (local Whisper; works when the platform's captions are
+  rate-limited or missing). Read the part that matters; say which minutes you covered.
 - **A chat link is a thread, not a link.** Read the replies and reactions. What people said
   about the artifact is usually more decision-relevant than the artifact, and it tells you
   who already holds an opinion.
@@ -168,10 +173,21 @@ directory exists.
 - **Verdict**: Nothing | Already covered | Watch | Change | Build | Publish
 - **Next**: {the one routed step, or `none`}
 
-## What it claims
+## What it says
 
-{2–4 bullets. Each is a load-bearing claim with a verbatim quote — the claims an action
-would rest on, not a summary of the piece.}
+{The artifact's own content, so the reader never has to open it. Lead with a one-line
+thesis, then:
+- **Every concrete example** the author gives, one numbered item each — what it is, how it
+  works (tools, inputs, numbers), and what result the author reports. Examples are
+  what readers come back for; a conclusion without them can't be checked. A minor one
+  gets one line.
+- **The rest of the argument** in its own order — a bullet per section or segment
+  (timestamps for a recording; estimated from chapters when the transcript has none, and
+  labelled so). Name the parts you did not read in one line.
+- **Verbatim quotes** on the load-bearing claims — the ones an action would rest on. A
+  machine transcript garbles names: quote only what reads cleanly, flag the rest.
+Report, don't judge: this section is what *they* said; the verdict comes after. Mark an
+unbacked figure as such inline ("no method given") — that is a fact about the claim.}
 
 ## Does it transfer
 
@@ -189,10 +205,11 @@ done instead — that is the part worth re-reading.}
 a version, a hire.}
 ```
 
-**Keep it under a page.** If the research ran long, the transcript goes to a scratch
-location (`.context/` when it exists), uncommitted — never into the notes directory. A note
-that grew into an evidence file is one nobody will open, and the verdict is the only part
-anyone needs.
+**Verdict on the first screen, detail below it.** The header lines carry the decision for
+someone skimming; "What it says" is as long as the artifact's substance needs — a 45-minute
+talk with seven worked examples gets seven items, a tweet gets two lines. What never goes
+in: the raw transcript or your research trail. Those go to a scratch location (`.context/`
+when it exists), uncommitted.
 
 ## 7. Route
 
@@ -219,10 +236,12 @@ Only invoke the next skill if the user says to. Two traps on the ramps:
 3. **The default verdict is `Nothing`, and every non-acting verdict names its reopen
    trigger.**
 4. **One routed action, at most.** Name the rest as declined.
-5. **The note ships regardless of the verdict** — a `Nothing` that can be found again is
+5. **The note carries the artifact's examples, not only your conclusion** — a reader
+   who asks "what did they actually say?" after reading it found a gap in the note.
+6. **The note ships regardless of the verdict** — a `Nothing` that can be found again is
    the product.
-6. **Read-only outside the note and its index row**, until the user confirms. The `Change`
+7. **Read-only outside the note and its index row**, until the user confirms. The `Change`
    ramp's edit happens after that confirmation, in the same commit.
-7. **Hand the technical survey to `prior-art`**, don't improvise one.
-8. **This context's own docs, code and history outrank the artifact** — including when the
+8. **Hand the technical survey to `prior-art`**, don't improvise one.
+9. **This context's own docs, code and history outrank the artifact** — including when the
    artifact is better written.
