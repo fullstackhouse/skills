@@ -92,7 +92,7 @@ The deliverable is a stack the user can act on in the order it was built:
 
 For a goal rather than a list: "migrate every remaining screen onto the shared layer", "finish this track". Its questions surface only during the work, one per unit, so a plan round up front catches few of them, and asking as they appear turns the owner into the scheduler. Track mode finds them in one pass at night and asks them in one sitting in the morning.
 
-**Plan round (evening).** This is track mode's Phase 3: agree the goal, what is out of scope, what the run may decide alone, and the time the morning packet is due. Run Phase 2's base-branch preflight here. Get an explicit go; after it, rule 3 applies.
+**Plan round (evening).** This is track mode's Phase 3: agree the goal, what is out of scope, what the run may decide alone, and the latest time the morning packet may arrive (a deadline, not a start time: see T4). Run Phase 2's base-branch preflight here. Get an explicit go; after it, rule 3 applies.
 
 **The item** is one unit of the goal (a screen, a module), or one change to shared code. Every unit the scout finds inside the agreed goal, and every shared-code change T2 keeps for them, is on the list, so rule 7 does not apply to them; anything outside the goal is a follow-up.
 
@@ -125,9 +125,11 @@ Ask at night only about security, data loss or a broken base branch, and do not 
 
 **Keep a night log** of assumptions, held branches, and idle periods with their causes. The packet is built from it.
 
-**Schedule the morning wake-up before the turn ends.** An agent whose turn has ended sleeps until something wakes it, so "I'll post at <packet time>" never happens unless a schedule or heartbeat sends that prompt. If the harness has neither, post the packet as the run's final message and say the wake-up could not be set.
+**Schedule the deadline wake-up before the turn ends.** An agent whose turn has ended sleeps until something wakes it, so "I'll post at <packet time>" never happens unless a schedule or heartbeat sends that prompt. The wake-up is a fallback for the deadline only. If the harness has neither, post the packet as the run's final message and say the wake-up could not be set.
 
 ### T4. Morning packet
+
+**Post it as soon as the night is done, not at the agreed time.** The night is done when every item has a final state: ready, stopped with a reason, parked, or *not started (limit)*. Check this each time an item reports back. Once it holds, post the packet in that turn and cancel the deadline wake-up. The agreed time only caps the wait. If the deadline wake-up fires first, post the packet with what is finished, and list each item still running with its state and what it is waiting on. Then post one follow-up when they finish, instead of a second packet.
 
 One message, with one ask per root decision, root question first. An ask is the harness's native ask where one exists; otherwise it is a numbered decision in the message. Each carries a recommendation, a confidence level (high, medium or low), the caller's code before and after, and screenshots for UI changes (from a local run when previews are down). Keep it answerable in one sitting, about 10 decisions. Fold PRs that share a root into one ask, and list the rest as parked, each with what would reopen it.
 
