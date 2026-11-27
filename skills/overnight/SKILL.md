@@ -67,6 +67,8 @@ Then get an explicit go. After that message, do not ask anything again.
 
 ### 4. The run
 
+**One workspace, one subagent per chain.** The run stays in the session that held the plan round. Start each independent chain as a background subagent (Agent tool, `isolation: "worktree"`) and run the chains in parallel. Do not create a separate workspace, tab or session per chain or item, because the owner wakes to one run and not to a sidebar of them. Each subagent works its chain's items in order inside its own worktree. When an item needs a running app, it uses the repo's ephemeral environment tooling and stops only the environment it started. When a chain ends, delivered or parked, `git worktree remove` its worktree and delete the local branch. The pushed branch and its PR remain.
+
 Per item, in stack order:
 
 1. Resolve its base: the base branch for a chain's first item, the **previous item's branch** for every other.
