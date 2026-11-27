@@ -1,0 +1,26 @@
+name: scripts-test
+
+# Tests the repo-level scripts (render-pr-format.mjs) and that the canonical PR format doc still
+# renders: consumers fetch both at a pinned SHA, so a broken one breaks their checks.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "skills/pr-polish/references/pr-description.md"
+      - ".github/workflows/scripts-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "skills/pr-polish/references/pr-description.md"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test 'scripts/__tests__/*.test.mjs'
