@@ -1,7 +1,7 @@
 <!-- pr-format-version: 2 -->
 # PR description format
 
-The house format for PR bodies. Skills that write one point here. A repo's own PR template or documented format wins over it. Repos keep a generated copy of this doc, with their own additions in its `extension` slots; edit the format here, never in a copy.
+The house format for PR bodies. Skills that write one point here. A repo's own PR template or documented format wins over it. Repos keep a generated copy of this doc, with their own additions in its `extension` slots; edit the format in fullstackhouse/skills, never in a copy.
 
 Write from general to specific, so a reader can stop after any section with a correct, just less detailed, picture.
 
