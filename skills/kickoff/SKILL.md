@@ -1,11 +1,11 @@
 ---
 name: kickoff
-description: Take an idea, a brainstorm brief, or a ticket and drive it autonomously to a ready-for-review PR — decide the plan depth yourself (spec first, or straight to code), implement with tests, then run deliver in no-merge mode so local checks, the local review-and-fix loop, the PR, and CI are handled. Use when asked to "kick off X", "start work on X", or turn an idea into a PR that's ready for review. Never merges.
+description: Take an idea, a brainstorm brief, or a ticket and drive it autonomously to a ready-for-review PR — decide the plan depth yourself (spec first, or straight to code), implement with tests, then run deliver, which handles local checks, the local review-and-fix loop, the PR, and CI, stops at ready, and ends with a Deliver ask (one button per level the repo deploys to). Use when asked to "kick off X", "start work on X", or turn an idea into a PR that's ready for review. Never merges.
 ---
 
 # kickoff
 
-You are running the **kickoff** skill. Goal: from an idea to a PR sitting **ready for review** — reviewed and hardened locally, findings fixed, CI green — with the human's remaining job being the review and the merge decision, nothing else.
+You are running the **kickoff** skill. Goal: from an idea to a PR sitting **ready for review** — reviewed and hardened locally, findings fixed, CI green — with the human's remaining job being the review and one decision on deliver's Deliver ask: how far to deliver it, nothing else.
 
 This is `deliver`'s front half's missing counterpart: `deliver` ships a branch that already exists; `kickoff` starts from nothing and stops where the merge decision begins.
 
@@ -58,19 +58,19 @@ Work the plan: implementation plus the tests that prove the Phase 1 verification
 
 If mid-implementation the approach turns out wrong (the plan fights the codebase, sunk steps keep needing patches), stop and re-derive rather than grinding — the `zoom-out` skill exists for exactly this.
 
-### 5. Deliver — no-merge mode
+### 5. Deliver — up to ready
 
-Invoke the **deliver** skill with `--no-merge` — and with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, the local review-and-fix loop that hardens the branch before the first push, push, PR open with a body in the [house format](../pr-polish/references/pr-description.md) (link the source ticket; name the spec if one was written), the CI loop, and the tracker's move to *in review* — stopping with the PR ready for review instead of merging.
+Invoke the **deliver** skill — with `--base <branch>` when this run had one, so the PR targets the parent rather than the repo default. It owns everything from here: scoped local checks, the confidentiality gate, the local review-and-fix loop that hardens the branch before the first push, push, PR open with a body in the [house format](../pr-polish/references/pr-description.md) (link the source ticket; name the spec if one was written), the CI loop, and the tracker's move to *in review* — stopping at `ready` and ending with its Deliver ask: one button per level the repo's workflows reach ("Deliver to dev", "Deliver to prod"). That ask replaces any merge ask of this skill's own. The owner's click on it runs `deliver --pr <N> --to <level>`, not this skill.
 
-Do not reimplement any of that here, and never merge from this skill — not even when the diff is tiny and green. The merge decision is the human's by design.
+Do not reimplement any of that here, and never merge from this skill — not even when the diff is tiny and green. How far to deliver is the human's decision by design.
 
 ### 6. Report
 
-Final message must include: the PR URL and its state (ready-for-review / awaiting-CI / blocked, per deliver's report), where the spec or plan lives, **every assumption made in the user's absence**, and anything deliberately left out (non-goals honored, follow-ups worth filing).
+Final message must include: the PR URL and its state (ready-for-review / awaiting-CI / blocked, per deliver's report), the Deliver ask and the levels it offers, where the spec or plan lives, **every assumption made in the user's absence**, and anything deliberately left out (non-goals honored, follow-ups worth filing).
 
 ## Hard rules
 
-1. **Never merge.** Ready-for-review is this skill's terminal state; ignoring that turns kickoff into an unattended `deliver`.
+1. **Never merge.** Ready-for-review, with deliver's Deliver ask open, is this skill's terminal state; ignoring that turns kickoff into an unattended `deliver`.
 2. **Never work on or push to the default branch.**
 3. **Ask once, early, only for forking product decisions.** Everything else is a recorded assumption. An unanswerable blocking question mid-flight → park cleanly: commit, push, report what's blocked and why.
 4. **Don't silently expand scope** beyond the brief/ticket; new ideas discovered en route become follow-up notes in the report, not extra diff.
