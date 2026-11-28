@@ -230,8 +230,7 @@ It compares `git patch-id --verbatim` of `git diff <merge-base>..<head>` for eac
 
     ```
     Next moves — PR #8: <what it does>
-    Now: blocked (do-not-merge) — remove the label, then choose Deliver to merged again
-    - Deliver to merged: "Deliver PR #8 to merged (offered at <sha>)" → /deliver --pr 8 --to merged
+    Now: blocked (do-not-merge) — once the label is removed, run deliver again for new moves
     ```
 
 ## Phases
