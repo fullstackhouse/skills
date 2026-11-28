@@ -191,6 +191,12 @@ The repo-agnostic skills (`deliver`, `review-loop`, `upstream-pr`, `bug-hunt`, `
 Repo slug and default branch are derived from `git` / `gh`, not the profile. If a needed
 knob is missing, the skills fall back to asking you.
 
+## The house PR format in other repos
+
+Repos keep a hand-kept copy of [`skills/pr-polish/references/pr-description.md`](./skills/pr-polish/references/pr-description.md)
+with a `Source: fullstackhouse/skills skills/pr-polish/references/pr-description.md (vN)` line.
+When this doc changes, bump its version and update the copies.
+
 ## Releasing (bump the version — this is not optional)
 
 **Any PR that adds, removes, renames, or changes a skill MUST bump `version` in

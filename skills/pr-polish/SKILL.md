@@ -35,7 +35,7 @@ The body must describe the PR **as it is now**, not as it was when opened:
 
 **Title**: Conventional Commits style, plain-language *outcome* (what a user/operator gets, not which function changed), task ID per repo convention.
 
-**Body**: open with a **context line** when there is one: task reference (`Closes`/`Part of` per repo convention), stacking and dependency notes. Then follow [`references/pr-description.md`](./references/pr-description.md): a short paragraph with no headings for a small PR; otherwise 🎯 → 🔧 → 🧭 → 🧩 → 🔍 → ✅ → ⚠️, dropping empty sections, with heading words that state this PR's actual problem, fix or impact. `### 🎯 The problem` is not acceptable.
+**Body**: open with a **context line** when there is one: task reference (`Closes`/`Part of` per repo convention), stacking and dependency notes. Then follow [`references/pr-description.md`](./references/pr-description.md): a short paragraph with no headings for a small PR; otherwise 🎯 → 🔧 → 📦 → 🧭 → 🧩 → 🔍 → ✅ → ⚠️ (plus any section the repo's copy adds), dropping empty sections, with heading words that state this PR's actual problem, fix or impact. `### 🎯 The problem` is not acceptable. 📦 How it's used walks a named, fictional person through the change step by step, each step pointing at the diff; it is required whenever the PR changes what a person does or how a caller calls the code (`n/a: internal` otherwise).
 
 Where this skill's content lands:
 
