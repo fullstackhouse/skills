@@ -107,8 +107,8 @@ Proof: review <…>; CI <…>; QA <…>
   gh api "repos/$SLUG/collaborators/$LOGIN/permission" --jq .permission   # admin | maintain | write | triage | read
   ```
   `read` or `triage` gets no moves; say why. `write` and `maintain` get every level; on a `REVIEW_REQUIRED` PR their click requests a review and goes on once it is approved. `admin` gets every level, and their click merges past a missing approval (step 8). A dispatched level whose environment has required reviewers that don't include the clicker (`gh api repos/$SLUG/environments/<env> --jq .protection_rules`) caps the moves below it.
-- **Not ready:** no moves, except for a PR that only waits on its parent PR (its move waits for the parent). `Now:` says what blocks.
-- **Blocked:** `Now: blocked (<reason>)` and what clears it, in the owner's terms. Don't ask the owner to do what a move would do (a chosen move is already the QA sign-off, so never ask them to add `qa-approved`).
+- **Not ready:** no moves, except for a PR that only waits on its parent PR (its move waits for the parent). `Now:` says what blocks. A hard stop is not ready: list no moves, even the one just chosen.
+- **Blocked:** `Now: blocked (<reason>)` and what clears it, in the owner's terms. Don't ask the owner to do what a move would do: a chosen move is already the QA sign-off, so never say QA sign-off or `qa-approved` is still needed.
 - **Waiting:** while carrying out a move, `Now:` says what it waits on (`CI on #<N>`, `staging deploy`) and the moves are empty. When the owner's move is next, list the remaining ones. At the top level: `Now: on <level>`, no moves.
 
 ## Deliver to a level
@@ -208,7 +208,7 @@ It compares `git patch-id --verbatim` of `git diff <merge-base>..<head>` for eac
    - **A level that follows:** its run starts by itself; find it with `gh run list --workflow <file> --event workflow_run --json databaseId,headSha,status,conclusion` and wait the same way.
    - **A dispatched level:** `gh workflow run <file> --ref <release target> -f <input>=<merge>`, find the run that dispatch started (`gh run list --workflow <file> --event workflow_dispatch --limit 5 --json databaseId,createdAt`), and wait for it.
 
-   A failed run is `blocked: <level> failed: <run url>`; never re-run a deploy on your own. After each level, refresh the [Next moves](#next-moves).
+   A failed run is `blocked: <level> failed: <run url>`; never re-run a deploy on your own. After each level, refresh the [Next moves](#next-moves). When `<level>` is reached (for `merged`, as soon as step 8 shows `MERGED`), go to step 10: a successful delivery ends with the block too.
 10. **Report** one of:
     - `delivered to <level>`
     - `changed since approval`
