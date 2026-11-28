@@ -1,7 +1,8 @@
-<!-- pr-format-version: 2 -->
 # PR description format
 
-The house format for PR bodies. Skills that write one point here. A repo's own PR template or documented format wins over it. Repos keep a generated copy of this doc, with their own additions in its `extension` slots; edit the format in fullstackhouse/skills, never in a copy.
+Version 2. Bump it when the sections or what they require change.
+
+The house format for PR bodies. Skills that write one point here. A repo's own PR template or documented format wins over it. Repos keep a hand-kept copy of this doc; change the format here first, then update the copies. A repo's own sections go after ✅ Testing and before ⚠️ Worth knowing, its own guides after "How the pieces fit".
 
 Write from general to specific, so a reader can stop after any section with a correct, just less detailed, picture.
 
@@ -24,7 +25,6 @@ Never `### 🎯 The problem` or `### 🔧 The fix`. Other sections keep a plain 
 - **🧩 How the pieces fit:** when the PR adds a flow or changes how parts work together, even inside one module. Only small internal changes skip it. See below.
 - **🔍 Details:** what a reviewer needs, not everything decided: names, the choice behind the approach and anything counter-intuitive.
 - **✅ Testing:** what was proven, the real results and what wasn't verified, not a run log of repeat counts and every check.
-<!-- extension: sections -->
 - **⚠️ Worth knowing:** risks, follow-ups and breaking changes.
 
 ## How it's used
@@ -56,7 +56,5 @@ Zoom in through these levels, each under a bold label:
 Show only the levels that changed, for spec PRs too, and skip one that would just repeat the level above, even for a new flow. System appears only when people or outside systems change. A new flow inside one module is usually Inside a module alone.
 
 Each level gets one or two plain sentences and one `flowchart TD` Mermaid diagram of about 12 nodes at most. Use plain labels in double quotes and label each arrow with what passes along it. When an existing flow changes, show "today" and "after" as two subgraphs.
-
-<!-- extension: guides -->
 
 Keep the description accurate when the PR changes.

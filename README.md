@@ -193,23 +193,9 @@ knob is missing, the skills fall back to asking you.
 
 ## The house PR format in other repos
 
-[`skills/pr-polish/references/pr-description.md`](./skills/pr-polish/references/pr-description.md)
-is the one canonical PR-description format. A repo that documents it for its own agents keeps a
-**generated** copy, never a hand-edited one:
-
-1. Add `pr-format.json` at the repo root: `{ "source": "fullstackhouse/skills", "sha": "<full
-   commit SHA>", "output": "<path of the copy>" }`, plus optionally `"extension"` (a file filling
-   the doc's `<!-- extension: sections -->` and `<!-- extension: guides -->` slots with
-   `<!-- slot: NAME -->` blocks), `"template"` (a PR template whose `###` emoji headings must
-   match the format's sections, in order) and `"render"` (the command named in the banner). An
-   `output` ending in `.ts`/`.js`/`.mjs` becomes a module exporting `PR_FORMAT`.
-2. Copy [`scripts/pr-format.mjs`](./scripts/pr-format.mjs) into the repo. It fetches
-   [`scripts/render-pr-format.mjs`](./scripts/render-pr-format.mjs) at the pinned SHA and runs it:
-   `node scripts/pr-format.mjs` renders the copy, `--check` exits 1 with a diff when the copy (or
-   the template) is out of step. Run `--check` in CI.
-3. To take a newer format, move `sha` and re-render.
-
-Bump the doc's `<!-- pr-format-version: N -->` when its sections or what they require change.
+Repos keep a hand-kept copy of [`skills/pr-polish/references/pr-description.md`](./skills/pr-polish/references/pr-description.md)
+with a `Source: fullstackhouse/skills skills/pr-polish/references/pr-description.md (vN)` line.
+When this doc changes, bump its version and update the copies.
 
 ## Releasing (bump the version — this is not optional)
 
