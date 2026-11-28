@@ -1,6 +1,6 @@
 ---
 name: pickup
-description: Take one tracker ticket from "someone wrote this down" to a ready-for-review PR, with a verified premise and a human go in between. Re-checks whether the ticket is still needed and measures its root cause instead of trusting the body, writes a plan brief with its open questions, interviews the user in one round (or records assumptions when unattended), waits for an explicit go — then hands to kickoff, which hands to deliver --no-merge. Use when asked to "/pickup <ticket>", "pick up ABC-123", "take this ticket", "is this still worth doing, and if so do it", or when a ticket URL arrives with intent to deliver rather than to discuss. Never merges.
+description: Take one tracker ticket from "someone wrote this down" to a ready-for-review PR, with a verified premise and a human go in between. Re-checks whether the ticket is still needed and measures its root cause instead of trusting the body, writes a plan brief with its open questions, interviews the user in one round (or records assumptions when unattended), waits for an explicit go — then hands to kickoff, which hands to deliver, ending at ready with its Next moves. Use when asked to "/pickup <ticket>", "pick up ABC-123", "take this ticket", "is this still worth doing, and if so do it", or when a ticket URL arrives with intent to deliver rather than to discuss. Never merges.
 ---
 
 # pickup
@@ -90,7 +90,7 @@ Keep it lean. It is a plan a reviewer reacts to, not a spec — and a scratch fi
 
 ### 4. The plan round — the last interaction
 
-Present, in one message: the verdict with its strongest evidence; the direction and what it beat; **the plan, at the brief's own resolution** — the areas it touches, the steps in order, how many PRs they become, and the verification that will prove it worked; **what a go sets running** — `kickoff` → `deliver --no-merge`, ending at ready-for-review with nothing merged and no further questions asked; and **every open question batched into a single list**, each with your default. Then wait.
+Present, in one message: the verdict with its strongest evidence; the direction and what it beat; **the plan, at the brief's own resolution** — the areas it touches, the steps in order, how many PRs they become, and the verification that will prove it worked; **what a go sets running** — `kickoff` → `deliver`, ending at ready-for-review with nothing merged, a Next moves block (one move per level the repo deploys to) as the only thing left for the user, and no further questions asked; and **every open question batched into a single list**, each with your default. Then wait.
 
 The plan and the go-contract are not optional paragraphs. A round that reads as evidence plus a question list leaves the user approving an unstated plan — which is the one thing this gate exists to prevent, because after the go nothing is asked again.
 
@@ -105,7 +105,7 @@ Write every answer back **twice**: into the brief's *Resolved unknowns*, and int
 
 ### 5. Run
 
-Invoke **kickoff** with the brief path. It decides depth (spec first or straight to code), branches, implements with tests, and calls `deliver --no-merge`, which runs the checks, the local review loop, opens the PR against the base branch with the ticket linked, works the reviewer and CI loops, and moves the ticket to *in review*. Do not reimplement any of that here.
+Invoke **kickoff** with the brief path. It decides depth (spec first or straight to code), branches, implements with tests, and calls `deliver`, which runs the checks, the local review loop, opens the PR against the base branch with the ticket linked, works the reviewer and CI loops, moves the ticket to *in review*, and stops at `ready` with its Next moves. That is where the run ends; it replaces any merge ask of this skill's own. Do not reimplement any of that here.
 
 **The go was given on a shape.** When the run departs from it — two planned PRs land as one, a step turns out unnecessary, the verification changes — that departure is named in the report, in the terms the plan round used. Rule 5 forbids asking, not telling.
 
@@ -113,7 +113,7 @@ If `kickoff` parks — a blocker it can't clear — the report says where and wh
 
 ### 6. Report
 
-Final message: the verdict and the one piece of evidence it rests on; the brief path; the PR URL and state (ready-for-review / awaiting-CI / blocked), or the ticket comment when the verdict stopped the run; **every assumption recorded in the user's absence**; and follow-ups discovered and deliberately not done. End with the machine-parseable lines:
+Final message: the verdict and the one piece of evidence it rests on; the brief path; the PR URL and state (ready-for-review / awaiting-CI / blocked) and deliver's Next moves, or the ticket comment when the verdict stopped the run; **every assumption recorded in the user's absence**; and follow-ups discovered and deliberately not done. End with the machine-parseable lines:
 
 ```
 Verdict: do | re-scope | abandon | already-done
@@ -124,7 +124,7 @@ Next: none | /kickoff "<goal> — brief: <path>"   ← the latter only when --un
 
 ## Hard rules
 
-1. **Never merge.** Ready-for-review is the terminal state; the merge is the human's.
+1. **Never merge.** Ready-for-review is the terminal state; how far to deliver is the human's choice among deliver's Next moves.
 2. **No code before the go.** Phases 1–4 write one brief and the ticket's body and comments — nothing in the repo's source tree. "It's small enough to just do it" is the signal this gate exists for.
 3. **Measure the claim the verdict rests on.** A verdict built only on re-reading the ticket's own reasoning has verified nothing. When measuring is impossible, the report says so and the verdict says *unverified*, not *confirmed*.
 4. **Never move Status, Assignee, or Priority.** Propose them in the comment; `deliver` moves *in review* with the PR.

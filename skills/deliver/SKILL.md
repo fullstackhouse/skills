@@ -1,29 +1,30 @@
 ---
 name: deliver
-description: Deliver the work on the current branch — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then auto-merge if changes since invocation are minimal. Supports --no-merge to stop at ready-for-review instead, --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it and stops at ready-for-review. CI is slow and a bot reviewer is slower; do not lean on either as a first pass. Use `--merge-only --pr <N> --expect-head <sha>` instead to carry out an owner's approval of a PR at a specific head, as in a merge train; it merges that head, or a later one carrying the same change, and adds no change of its own.
+description: Deliver the work on the current branch, or an existing PR, to a level — run all relevant local checks (lint/typecheck/tests), get the change reviewed and fixed locally through the review-loop skill before anything is pushed, open or update a PR, work the CI loop, then stop at `ready` with a Next moves block offering each level the repo's own workflows reach (e.g. dev, staging, prod). `--pr <N> --to <level>` carries out the owner's chosen move: it is resumable, re-runs only the steps whose proof no longer matches the PR's patch-id, merges, and promotes the merge up to that level. Supports --base to target a branch other than the repo default (stacked PRs), --bot-review / --no-bot-review to force a PR bot's on-record review on or off, and --review-rounds N (0-10) to cap the local review loop — 0 skips it. CI is slow and a bot reviewer is slower; do not lean on either as a first pass. `--merge-only --pr <N> --expect-head <sha>` is a deprecated alias of `--pr <N> --to <first level>`, kept for one release.
 ---
 
 # deliver
 
-You are running the **deliver** skill. Goal: take whatever is on the current branch and get it merged with as few CI round-trips as possible.
+You are running the **deliver** skill. Goal: take whatever is on the current branch to `ready` with as few CI round-trips as possible, and, on the owner's Deliver click, on up the repo's [levels](#levels) to the one they clicked.
 
 CI is slow and every avoidable push is a real cost — front-load everything locally before pushing. That includes the **review**: Phase 3 hands the change to the **review-loop** skill, which reviews and fixes it with fresh-context reviewers *before* the first push, so the diff that reaches GitHub is already hardened. A reviewer on the far side of the network — a bot, a person — is something this skill can put on the record (Phase 6b) but never waits on as a first pass.
 
-**No-merge mode:** when invoked with `--no-merge` (how the **kickoff** skill calls this) — **or with `--review-rounds 0`, which implies it** — everything through Phase 6b runs unchanged — checks, confidentiality gate, review, PR, CI loop, the tracker's move to *in review* — but Phase 7's merge condition is forced false: leave the PR ready for review, skip Phase 7b, and report. The merge decision stays with the human.
+**Without a click, stop at `ready`.** This is every run without `--to` (how **kickoff**, **pickup** and **overnight** call this): everything through Phase 6b runs — checks, confidentiality gate, review, PR, CI loop, the tracker's move to *in review* — then Phase 7 assesses `ready`, writes the [Next moves](#next-moves), skips Phase 7b, and reports. Nothing is merged; the decision of how far to deliver stays with the owner. `--no-merge` is accepted and means the same. `--review-rounds 0` stops at `ready` too, and its Next moves say no local review ran.
 
-Phase 7's `REVIEW_REQUIRED` branch **does not fire in this mode**. It exists to unblock a merge, and there is no merge to unblock; a human is going to open this PR anyway, which is the whole point of handing it back. Requesting one from here would page a colleague per item on an unattended `overnight` run — for a PR whose author has not yet looked at it.
+**No review is requested without a click.** Requesting one exists to unblock a merge, and there is no merge to unblock; a human is going to open this PR anyway, which is the whole point of handing it back. Requesting one from here would page a colleague per item on an unattended `overnight` run — for a PR whose author has not yet looked at it. A click on a `REVIEW_REQUIRED` PR is what requests one ([Deliver to a level](#deliver-to-a-level), step 8).
 
-**Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 7's stacked-base check then does exactly what it always did — a base that is an open PR blocks auto-merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
+**Stacked mode:** when invoked with `--base <branch>`, that branch — not the repo's default branch — is what this PR targets and what every diff in this run is computed against. Its purpose is stacking: the parent branch is usually itself an open PR, so this PR's diff shows only the increment on top of it instead of replaying the parent's changes. Phase 0 resolves it once into `BASE_REF`; nothing downstream re-derives it. Phase 7's stacked-base check then does exactly what it always did — a base that is an open PR blocks the merge — which under `--base` is the expected outcome, not a surprise: land the parent first.
 
-**Merge-only mode:** `--merge-only --pr <N> --expect-head <sha>` merges an existing PR the owner has approved at that head, or at a later head that carries the same change (a rebase, or a merge of the base), and adds no change of its own. It is the executor behind a batched approval such as `overnight` track mode's merge train. It runs [its own procedure](#merge-only-mode) instead of the phases.
+**Deliver to a level:** `--pr <N> --to <level>` carries out the owner's chosen move: it takes an existing PR up the repo's levels to `<level>` and stops there. deliver is resumable: it runs [its own procedure](#deliver-to-a-level), which works through the phases and skips every step whose [proof](#proof) still holds, so "Deliver to prod" the day after "Deliver to dev" only runs the promotion. It is also the executor behind a batched approval such as `overnight` track mode's merge train.
 
 ## Arguments
 
-- **`--no-merge`** — stop at ready-for-review; Phase 7 assesses but never merges. How **kickoff** calls this.
-- **`--merge-only --pr <N> --expect-head <sha> [--parent <P> --parent-head <psha>]`** — merge an existing PR the owner approved at `<sha>`, adding no change of its own. See [Merge-only mode](#merge-only-mode). No other flags are allowed with it.
+- **`--pr <N> [--to <level>] [--parent <P> --parent-head <psha>]`** — deliver an existing PR, resolving its head yourself. Without `--to` (or with `--to ready`) it re-proves `ready` and refreshes the Next moves. With a higher level it needs the owner's click and runs [Deliver to a level](#deliver-to-a-level). `--parent` is for a PR that was stacked on PR `<P>` at head `<psha>`.
+- **`--no-merge`** — the default: stop at `ready`. Accepted so existing callers keep working.
+- **`--merge-only --pr <N> --expect-head <sha> [--parent …]`** — deprecated, accepted for one release: the same as `--pr <N> --to <the first level above ready>`, with `<sha>` as the approved head. Unlike the old mode, that waits for the merge level's deploy too, and may push CI fixes below the material-change measure.
 - **`--base <branch>`** — target `<branch>` instead of the repo default, and compute every diff in the run against it. For stacking.
 - **`--bot-review` / `--no-bot-review`** — force Phase 6b's on-record bot review on or off, overriding the `reviewer` profile knob for this run.
-- **`--review-rounds N`** — cap Phase 3's local review at `N` rounds. **0–10, default 3.** Raise it for a change whose review keeps finding real defects. **Don't lower it to 1 or 2 to save time** — Phase 3 fixes what round 1 raises, and with `--quiet-rounds 1` a confirming round then has to fit inside the budget. (That confirming round is cheap: one reviewer on the fix commits, and it only has to come back free of blockers and majors, not free of nits. It runs only when round 1 fixed a blocker or major; a round 1 that confirmed nothing worse than a minor ends the loop.) At `N=1` any finding at all guarantees `budget-exhausted`, which Phase 7 reports as `blocked`, and the loop's own rules forbid buying more rounds by re-invoking. If you have already reviewed the work, pass `0`, not `1`. **`0` skips the review entirely and forces `--no-merge`** — see Phase 3. A value outside 0–10 is a stop, not a clamp: silently reviewing three times when someone asked for thirty is worse than refusing.
+- **`--review-rounds N`** — cap Phase 3's local review at `N` rounds. **0–10, default 3.** Raise it for a change whose review keeps finding real defects. **Don't lower it to 1 or 2 to save time** — Phase 3 fixes what round 1 raises, and with `--quiet-rounds 1` a confirming round then has to fit inside the budget. (That confirming round is cheap: one reviewer on the fix commits, and it only has to come back free of blockers and majors, not free of nits. It runs only when round 1 fixed a blocker or major; a round 1 that confirmed nothing worse than a minor ends the loop.) At `N=1` any finding at all guarantees `budget-exhausted`, which Phase 7 reports as `blocked`, and the loop's own rules forbid buying more rounds by re-invoking. If you have already reviewed the work, pass `0`, not `1`. **`0` skips the review entirely**, so the run stops at `ready` with no review proof, and a later click runs the review first — see Phase 3. A value outside 0–10 is a stop, not a clamp: silently reviewing three times when someone asked for thirty is worse than refusing.
 
 ## Project specifics — read these first
 
@@ -43,27 +44,89 @@ This skill is repo-agnostic. The concrete commands, reviewer, and merge policy c
 
   Same order `upstream-pr` uses, so the two skills cannot disagree about where a repo's work lands. Ignore a literal `"auto"` at tiers 2–3 — it means "detect", not a branch called `auto`. Phase 0 resolves it once into `BASE_REF`; every later phase reads that variable rather than re-deriving a base of its own, and the report states which tier the value came from whenever it was not the default branch.
 - **Review on the record** — the `## Skill profile` key **`reviewer`** (singular): a PR review bot's **login** (`copilot-pull-request-reviewer` is the usual one), set only by repos that want a bot review attached to the PR. Its presence is what switches Phase 6b on; `--bot-review` / `--no-bot-review` override it for one run. It is not the reviewer that hardens the change — that is Phase 3, and it runs whether or not this key exists.
-- **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to request when the PR cannot merge without an approving review (Phase 7). Unset, a candidate is derived from recent merged PRs.
-- **ownerCanSelfMerge** — from the `## Skill profile`; gates whether `gh pr merge --admin` is acceptable (see Phase 7). Default: false (don't bypass required reviews).
+- **Human reviewers** — the `## Skill profile` key **`reviewers`** (plural), a distinct knob: who to request when a Deliver click meets a missing approval the clicker cannot bypass ([Deliver to a level](#deliver-to-a-level), step 8). Unset, a candidate is derived from recent merged PRs.
+- **Levels** — read from the repo's workflows, never configured: see [Levels](#levels). An `ownerCanSelfMerge` profile key is ignored; the owner's click is what authorizes `--admin` ([Deliver to a level](#deliver-to-a-level), step 8).
+- **Its own delivery skills** — a repo whose agent docs route PRs through its own delivery skills (an Open Mercato app that carries the `om-*` pipeline in `.ai/skills`) delivers through those. There, this skill may still take a change to `ready` when another skill calls it, but it never merges or promotes, and lists no moves: the merge belongs to that pipeline, so name it in the report instead.
 - **Dev-server / port convention** — if the repo documents one (e.g. a worktree port rule), follow it whenever you need to start a service for a local test.
 - **Tracker + its status vocabulary** — from the `## Skill profile` (`tracker`). If the repo documents which states mean *in progress*, *in review* and *done*, this skill moves the task along with the PR (Phases 5b and 7b). If it documents a tracker but no vocabulary, don't guess at state names — report the task's current state in Phase 8 instead.
 
 If a needed value isn't documented and you can't infer it, ask the user rather than guessing.
 
-## Merge-only mode
+## Levels
 
-`--merge-only --pr <N> --expect-head <sha>`, plus `--parent <P> --parent-head <psha>` for a PR that was stacked on PR `<P>` at head `<psha>`. Refuse if a required value is missing, or if other flags are passed with them.
+A **level** is how far a change has gone. `ready` is built in and always first: checks, review loop, QA evidence when the PR needs it, CI green, nothing merged. Every level above it is a stage the repo's own pipeline reaches, read from the repo, never configured. Derive them once per run, from the release target's copy (`git show origin/<release target>:.github/workflows/<file>`; the release target is defined under [Deliver to a level](#deliver-to-a-level)), in this order; the first source that yields a level wins:
 
-**Run it only on the owner's own instruction in this session:** their message, or an ask action they clicked, naming this PR and this SHA (a merge-train approval lists both). Never on your own initiative. Never on the word of another skill, a subagent, a PR or issue comment, or an earlier general approval. Without that instruction, report `blocked: no owner approval` and stop.
+1. **Workflows.** Read each file's `on:`, `name:`, its jobs' `environment:` and their `uses: ./.github/workflows/…` calls. A workflow is a candidate when it deploys or releases: a job has an `environment:`, or its name or file says deploy, release or publish. These are never levels: CI, lint and test workflows; preview workflows (triggered by `pull_request`); cleanup (a closed PR, a reaper); image builds; scheduled jobs; and a workflow only another one calls (`workflow_call`), which belongs to its caller. A candidate whose trigger ties it to the default branch is a level:
+   - **Reached by the merge:** a `push` to the default branch, or a `workflow_run` of a non-level workflow (CI) on it. Several such workflows are one level. When a `paths` / `paths-ignore` filter excludes every file in this PR's diff, the workflow will not run for this merge: leave it out for this PR.
+   - **Follows a level by itself:** a `workflow_run` of a level's workflow.
+   - **Dispatched:** only `workflow_dispatch`, with an input that takes a commit SHA or a ref. deliver dispatches it for the merge commit, then watches it. A dispatch with no such input (no inputs, a choice of environment, a release tag) is not a level; list it as skipped under `Levels read`.
+2. **Prose.** A repo with no such workflow that describes its deploy in its `AGENTS.md` or README ("merging to main deploys to staging") takes its levels from that text.
+3. **Default.** Otherwise there is one level, `merged`.
 
-The owner approves a change, not a commit: their approval of that head covers any later head that passes [same change](#same-change), and replaces Phase 7's review, size and `start-sha` conditions. Steps 1–6 are the whole gate. The mode adds no change of its own: the only new commits it may create are a stacked child's patch-identical rebase and step 6's merge of the base.
+**Names.** A level is named by the stage word in its workflow's `name:` or file name: `dev`, `staging`, `prod` (also `production`), `released` (also `release`). Without one, use the farthest stage word in its environment names, else the file name without `.yml`. Environment names often name a credential scope (`om-preview` on a dev deploy), so they come second. A merge level of several workflows takes the farthest name, in the order `dev` < `staging` < `prod` / `released`; a workflow without a stage word never names it while another has one. A merge level that none of the PR's workflows reach is `merged`. Order: `ready`, the merge level, each level that follows it, then the dispatched ones.
 
-Export `SLUG` as Phase 0 does before step 1; any `gh api` error in this mode means `blocked: <error>`.
+**Proof.** A level is reached when its workflow run succeeded for the merge commit, or for a later commit on the default branch that contains it (`git merge-base --is-ancestor <merge> <run headSha>`), since a later push deploys the merge too. For a dispatched level, `headSha` is the branch the run started on, not the input, so only a run this session dispatched for the merge commit, or one whose `displayTitle` names a commit that contains it, is proof. Otherwise dispatch it again: a repeated deploy of the same commit costs a run, a promotion skipped on a guess ships nothing.
 
-**Release target** means the default branch, or the base from tiers 2–4 of the PR-base list in Project specifics. **Gather Project specifics first:** this mode uses `ownerCanSelfMerge` and the repo's merge-blocking labels.
+Worked readings: a dev deploy on push, a staging deploy on `workflow_run` of it, and a prod deploy dispatched with a `sha` input give `dev` → `staging` → `prod`. Dev and prod deploys that both run on push give one level, `prod`: merging reaches both. A release workflow on `workflow_run` of CI gives `released`. A path-filtered push deploy of a side service (`paths: apps/<service>/**`) is part of the merge level only for a PR that touches those paths. A workflow that doesn't fit these rules can be misread; that is why the Next moves list the levels read and where each came from. The fix for a wrong read is the workflow or a sentence in `AGENTS.md`, not a setting.
+
+## Proof
+
+deliver writes no state of its own. Every step is skipped when proof that it already covered this change still holds, and every proof is something that already exists: what this session did, review-loop's state, or GitHub. **This change** means the PR's own diff, keyed on its patch-id, so a rebase that leaves the diff alone keeps every proof:
+
+```bash
+"${CLAUDE_SKILL_DIR}/scripts/patch-id.sh" origin/<baseRefName> HEAD <proven-sha>   # equal second columns: same change
+```
+
+- **Phase 2, local checks:** this session ran them on a head with the same patch-id; or CI is green on the PR's head and that head's patch-id equals HEAD's. CI runs the same gates.
+- **Phase 3, review:** this session's own review of a head with the same patch-id; or review-loop's `state.json` with `sources.local.exit: converged` at a `sources.local.reviewed_oid` whose patch-id equals HEAD's, with no blocker or major open. No such proof (a fresh session without that file): the review runs again.
+- **QA evidence:** a PR comment with the QA result (pass/fail, screenshots) that names the head it tested, and that head's patch-id equals HEAD's.
+- **Phase 4, push:** the PR's `headRefOid` equals HEAD.
+- **Phase 5, PR:** the PR exists; its update path runs.
+- **Phase 6, CI:** never skipped. CI has to be green on the head being merged, and a green run already on it is that proof.
+- **The merge:** the PR is `MERGED` with this change (step 1 of [Deliver to a level](#deliver-to-a-level)).
+- **Each level above the merge:** its proof under [Levels](#levels).
+
+A missing proof means the step runs; never skip on a guess. A skip never weakens the merge gate, because CI still has to pass on the head being merged. The report lists each skipped step and the proof it reused.
+
+## Next moves
+
+The owner makes one decision per change: how far to deliver it. deliver hands it over as a **Next moves** block. **Every run's final message ends with it**, including a run that stops at a hard stop, waits on CI or a review, or has reached the top level: then the block has `Now:` and no moves. It decides what the moves are; how they are shown is the host's business. A host that turns choices into buttons (Paseo's asks plugin, for one) makes one button per move and owns the rest: subscribing to the PR, marking it waiting, closing it once it is done. In a plain chat the block is text the owner can copy. Don't drive a host's tool from here; write the block.
+
+```
+Next moves — PR #<N>: <one plain line on what it does>
+Now: ready | on <level> | waiting on <what>
+Levels read: dev ← deploy-dev.yml (push to main); prod ← deploy-prod.yml (dispatched); skipped: <workflow> (<why>)
+Proof: review <…>; CI <…>; QA <…>
+- Deliver to <level>: "Deliver PR #<N> to <level> (offered at <head sha>)" → /deliver --pr <N> --to <level>
+```
+
+- **Moves:** one per level above the current one, up to the clicker's cap, lowest first and marked recommended. The instruction is exact, because a host sends it back verbatim; add `--parent <P> --parent-head <psha>` for a child stacked on an open PR. No "when green" variants: every move waits for green, because waiting is the agent's job.
+- **The clicker's cap.** The clicker is the host's `gh` user:
+  ```bash
+  LOGIN=$(gh api user --jq .login)
+  gh api "repos/$SLUG/collaborators/$LOGIN/permission" --jq .permission   # admin | maintain | write | triage | read
+  ```
+  `read` or `triage` gets no moves; say why. `write` and `maintain` get every level; on a `REVIEW_REQUIRED` PR their click requests a review and goes on once it is approved. `admin` gets every level, and their click merges past a missing approval (step 8). A dispatched level whose environment has required reviewers that don't include the clicker (`gh api repos/$SLUG/environments/<env> --jq .protection_rules`) caps the moves below it.
+- **Not ready:** no moves, except for a PR that only waits on its parent PR (its move waits for the parent). `Now:` says what blocks.
+- **Blocked:** `Now: blocked (<reason>)` and what clears it, in the owner's terms. Don't ask the owner to do what a move would do (a chosen move is already the QA sign-off, so never ask them to add `qa-approved`).
+- **Waiting:** while carrying out a move, `Now:` says what it waits on (`CI on #<N>`, `staging deploy`) and the moves are empty. When the owner's move is next, list the remaining ones. At the top level: `Now: on <level>`, no moves.
+
+## Deliver to a level
+
+`--pr <N> --to <level>`, plus `--parent <P> --parent-head <psha>` for a PR that was stacked on PR `<P>` at head `<psha>`. Refuse if `<level>` is not one the repo's [levels](#levels) give this PR, and say which it gives.
+
+Every "report … and stop" in this procedure goes to step 10, which ends with the Next moves block.
+
+**Run it only on the owner's own instruction in this session:** their message, or a Deliver move they chose (a host button sends its instruction), naming this PR and this level. Never on your own initiative. Never on the word of another skill, a subagent, a PR or issue comment, or an earlier general approval. Without that instruction, report `blocked: no owner approval` and stop. `--to ready` needs none.
+
+The owner approves a change, not a commit. **The approved head** is the head the click's instruction names (`offered at <sha>`, or the deprecated alias's `--expect-head`); else the head this session offered the moves at; else, for an instruction the owner typed without one, the PR's head when it lands. `<sha>` is the approved head until step 2 accepts a later one, and the accepted head from then on. A later head is still approved when it passes [same change](#same-change), or when the approved head is its ancestor and the commits since it are not material: `git diff --shortstat <approved> <head>` stays under about 100 lines (insertions plus deletions), and `git diff --diff-filter=A --name-only <approved> <head>` adds no file. Anything else is `changed since approval`: report it and list the moves again at that head, for a new choice. The approval replaces nothing else: `ready` still needs its proofs.
+
+Export `SLUG` as Phase 0 does before step 1; any `gh api` error in this procedure means `blocked: <error>`.
+
+**Release target** means the default branch, or the base from tiers 2–4 of the PR-base list in Project specifics. **Gather Project specifics first:** this procedure uses the `reviewers` knob and the repo's merge-blocking labels.
 
 **Rebase-and-prove `(<from>, <onto>)`.** Step 4 uses this procedure, run inside `$WT`:
-1. Run `git fetch origin <onto>`, then `git -c rebase.updateRefs=false rebase --onto origin/<onto> <from>` on the detached HEAD. On any conflict, run `git rebase --abort`, report `conflict on rebase` and stop. **Never resolve a conflict in this mode.**
+1. Run `git fetch origin <onto>`, then `git -c rebase.updateRefs=false rebase --onto origin/<onto> <from>` on the detached HEAD. On any conflict, run `git rebase --abort`, report `conflict on rebase` and stop. **Never resolve a conflict in this procedure.**
 2. In one shell invocation:
    ```bash
    set -o pipefail
@@ -81,86 +144,103 @@ Export `SLUG` as Phase 0 does before step 1; any `gh api` error in this mode mea
 ```
 It compares `git patch-id --verbatim` of `git diff <merge-base>..<head>` for each head. Hunks in `*.md` files and under any `docs/` or `.ai/` directory may differ, so a doc-only conflict resolution counts as unchanged. Agent instructions (`AGENTS.md`, `CLAUDE.md`, `SKILL.md`, `.ai/skills/`, `.agents/`) count as code; every other hunk must match exactly. Its `differs:` lines name the files the update touched.
 - Exit 0, `same change`: `<head>` is approved. Use it as `<sha>` from here on (once `$WT` exists, `git checkout --detach <sha>` in it), and keep the `differs:` lines for the report.
-- Exit 1, `changed`: `changed since approval`.
+- Exit 1, `changed`: apply the material-change measure above.
 - Exit 2: `blocked: <its error>`.
 
 **Steps:**
 
 1. **Read the PR:**
    ```bash
-   gh pr view <N> --json state,isDraft,headRefName,headRefOid,baseRefName,reviewDecision,mergeStateStatus,labels,isCrossRepository,mergeCommit,body
+   gh pr view <N> --json state,isDraft,headRefName,headRefOid,baseRefName,reviewDecision,latestReviews,mergeStateStatus,labels,isCrossRepository,mergeCommit,body
    ```
    Then, in order:
    - **Already `MERGED`:**
-     - `headRefOid` equals `<sha>`: report `merged`.
-     - Otherwise, with `--parent`: fetch `<sha>`, `<psha>` and `mergeCommit.oid`. If any is missing, report `blocked: cannot verify the merged change`. If all three are present, compare `git diff <mergeCommit.oid>^ <mergeCommit.oid>` with `<psha>..<sha>` by patch-id: equal means `merged`, different means `blocked: merged with a different change`.
+     - `headRefOid` equals `<sha>`: the merge is proven. Run Phase 7b if it hasn't run (a run that died after the merge), then go to step 9.
+     - Otherwise, with `--parent`: fetch `<sha>`, `<psha>` and `mergeCommit.oid`. If any is missing, report `blocked: cannot verify the merged change`. If all three are present, compare `git diff <mergeCommit.oid>^ <mergeCommit.oid>` with `<psha>..<sha>` by patch-id: equal means the merge is proven, run Phase 7b if it hasn't run, then go to step 9; different means `blocked: merged with a different change`.
      - Otherwise: report `blocked: merged with a different change`.
-
-     Stop in every case.
-   - **Blocked:** report `blocked: <reason>` and stop when any of these holds:
+   - **Hard stop:** report `blocked: <reason>` and stop when any of these holds. A click never overrides one:
      - the PR is not open, or is a draft;
-     - it carries a merge-blocking label;
-     - `reviewDecision` is `CHANGES_REQUESTED`;
-     - it has an unresolved review thread: `gh api graphql -f query='query{repository(owner:"<o>",name:"<r>"){pullRequest(number:<N>){reviewThreads(first:100){totalCount nodes{isResolved}}}}}'`. If `totalCount` is above 100, report `blocked: too many threads to verify`.
-   - **Review required:** `REVIEW_REQUIRED` and `ownerCanSelfMerge` is not true. Report `awaiting-review` and stop; a chat approval is not a forge approval.
+     - it carries `do-not-merge`, `blocked` or `qa-failed`, or a label the repo's docs name as merge-blocking;
+     - a latest review by anyone but the clicker is `CHANGES_REQUESTED`;
+     - a person (an author whose `__typename` is not `Bot`; GraphQL logins carry no `[bot]` suffix) opened a review thread that is unresolved: `gh api graphql -f query='query{repository(owner:"<o>",name:"<r>"){pullRequest(number:<N>){reviewThreads(first:100){totalCount nodes{isResolved comments(first:1){nodes{author{__typename login}}}}}}}}'`. If `totalCount` is above 100, report `blocked: too many threads to verify`. An unresolved bot thread is not a hard stop; Phase 6b works it in step 5.
    - **Not a feature branch:** `headRefName` is a release target, or a protected branch (`gh api repos/$SLUG/branches/<headRefName> --jq .protected`), or the PR comes from a fork. Report `blocked: head is not a feature branch` and stop.
-2. **Head check.** If `headRefOid` differs from `<sha>`, run same-change(`<sha>`, `headRefOid`). A rebase or a merge of the base that left the change alone carries on; anything else stops there.
-3. **Setup.**
+2. **Head check.** If `headRefOid` differs from the approved head, apply the approval rule above. A rebase or a merge of the base that left the change alone carries on, and so do review and CI fixes below the material-change measure; anything else stops there.
+3. **Setup.** When the current checkout is the PR's branch at `<sha>`, work in it. Otherwise:
    ```bash
    git fetch origin
    WT=$(mktemp -d)
    git worktree add --detach "$WT" <sha>
    ```
-   Run every later git command inside `$WT`, and run `git worktree remove --force "$WT"` on every exit. The caller's checkout and the named branch are never touched.
+   Run every later git command inside `$WT`, and run `git worktree remove --force "$WT"` on every exit. The caller's checkout and the named branch are never touched. In `$WT`, every push the phases make goes to the named ref with a lease, as in rebase-and-prove step 4, and every `gh pr` call names `<N>`. review-loop's `state.json` stays in the caller's checkout's run directory: read it, and point the loop's run directory at it, from there.
 4. **Base.**
-   - **No `--parent`:** `baseRefName` must be a release target. If it is not, report `blocked-on-parent-PR #<n>` when an open PR heads it, else `blocked: base is not a release target`, and stop.
+   - **No `--parent`:** `baseRefName` must be a release target. If an open PR heads it instead, the click waits for that parent to merge, as it waits for CI: report `Now: waiting on #<n> merged`, and `blocked-on-parent-PR #<n>` until it lands. Any other base: `blocked: base is not a release target`, and stop.
    - **`--parent` given:** read the parent with `gh pr view <P> --json state,headRefName,baseRefName,headRefOid,mergeCommit`. Stop with the named report if any check fails:
      - the parent is not `MERGED`: `blocked-on-parent-PR #<P>`;
      - its `baseRefName` is not a release target: `blocked: base is not a release target`;
-     - `<psha>` is not the parent's `headRefOid`: `blocked: parent head mismatch`. The train stacks one level deep and this mode never rebases a PR that has children, so the parent's merged head is the one the owner approved;
+     - `<psha>` is not the parent's `headRefOid`: `blocked: parent head mismatch`. The train stacks one level deep and this procedure never rebases a PR that has children, so the parent's merged head is the one the owner approved;
      - the child's `baseRefName` is neither the parent's `headRefName` nor the parent's `baseRefName`: `blocked: not stacked on #<P>`;
      - `git fetch origin <base>` fails, or the parent's `mergeCommit.oid` is not an ancestor of `origin/<base>`: `blocked: parent not on <base>`. Here `<base>` is the parent's `baseRefName`.
 
      Then decide whether to rebase:
-     - The parent's merge commit is already an ancestor of `<sha>`: a re-approved, already-rebased head. Skip the rebase; if `baseRefName` is still the parent's `headRefName`, retarget it to `<base>` (`gh pr edit <N> --base <base>`, and on failure `blocked: retarget failed`). A retarget does not re-run CI, so after one, re-run the head's latest workflow runs (`gh run rerun <id>`) before step 5.
+     - The parent's merge commit is already an ancestor of `<sha>`: a re-approved, already-rebased head. Skip the rebase; if `baseRefName` is still the parent's `headRefName`, retarget it to `<base>` (`gh pr edit <N> --base <base>`, and on failure `blocked: retarget failed`). A retarget does not re-run CI, so after one, re-run the head's latest workflow runs (`gh run rerun <id>`) before step 6.
      - `<psha>` is an ancestor of `<sha>`: run rebase-and-prove(`<psha>`, `<base>`).
      - Neither: report `blocked: not stacked on the parent's final head` and stop.
-5. **Every check green on `<sha>`.** This is hard rule 4, which still applies here. Wait as **Waiting on CI** says; its `no-checks` answer means report `awaiting-CI` and stop, and `head-moved` means step 2 on the new head, then step 5 again. `gh pr checks` covers every check, required or not, and commit statuses too. Confirm the result against the head commit's check-runs as Phase 6 does. A failure means `CI failed`: report it and stop, with no fixes in this mode.
-6. **Merge.**
+5. **Ready, from proof.** Work through Phases 1–6b in the working copy, skipping each step whose [proof](#proof) still holds and noting the proof it reused. A step without proof runs as its phase says, fixes included. After any new commit, repeat step 2 against the approved head. Then evaluate Phase 7's `ready` conditions; anything but `ready` (a review that ended `budget-exhausted`, a blocker or major still open, an unresolved bot thread) reports `blocked: <condition>` and stops.
+6. **Every check green on `<sha>`.** This is hard rule 4. Wait as **Waiting on CI** says; its `no-checks` answer means report `awaiting-CI` and stop, and `head-moved` means step 2 on the new head, then step 6 again. `gh pr checks` covers every check, required or not, and commit statuses too. Confirm the result against the head commit's check-runs as Phase 6 does. A real failure goes to Phase 6, which fixes it; then step 2, since a material fix re-asks instead of merging.
+7. **QA sign-off.** When the PR carries `needs-qa`, the click is the QA sign-off: with QA evidence on the head (its [proof](#proof)), add the label with `gh pr edit <N> --add-label qa-approved`. Without it, report `blocked: needs QA evidence` and stop. This skill does not run QA itself.
+8. **Merge.**
    - Re-read the PR and repeat step 1's checks, since a label or review can arrive during the CI wait. Then read `mergeStateStatus`, waiting up to 5 minutes while it is `UNKNOWN`:
-     - a different head: step 2 on it, then step 5 again;
+     - a different head: step 2 on it, then step 6 again;
      - `CLEAN` or `HAS_HOOKS`: merge;
-     - `BLOCKED` with `reviewDecision: REVIEW_REQUIRED` and `ownerCanSelfMerge` true: first list the base's required checks, from classic protection (`gh api repos/$SLUG/branches/<baseRefName>/protection/required_status_checks`, where a 404 means none) and from rulesets (`gh api repos/$SLUG/rules/branches/<baseRefName>`). Each must have succeeded on `<sha>`. A required check that never ran, or ran late, is not a pass. Only then merge with `--admin`; otherwise report `blocked: branch protection`;
+     - `BLOCKED` with `reviewDecision: REVIEW_REQUIRED`, and the clicker can merge as an admin (`gh api graphql -f query='query{repository(owner:"<o>",name:"<r>"){pullRequest(number:<N>){viewerCanMergeAsAdmin}}}'`): first list the base's required checks, from classic protection (`gh api repos/$SLUG/branches/<baseRefName>/protection/required_status_checks`, where a 404 means none) and from rulesets (`gh api repos/$SLUG/rules/branches/<baseRefName>`). Each must have succeeded on `<sha>`. A required check that never ran, or ran late, is not a pass. Only then merge with `--admin`; otherwise report `blocked: branch protection`;
+     - `BLOCKED` with `reviewDecision: REVIEW_REQUIRED`, and the clicker cannot: request the reviewers with `review-loop --source human --pr <N> --base <baseRefName> --gate none --no-fix`, which uses the `reviewers` profile knob or derives a candidate, and report `awaiting-review`, with `Now: waiting on the review`; once it is approved, run this procedure again, since the click still stands. `--no-fix` is what makes `--gate none` safe: a source that fixed and pushed from here would leave the PR's newest commit ungated, unreviewed and unwatched. This is the only place this skill requests a person;
      - any other `BLOCKED`: `blocked: branch protection`;
-     - `UNSTABLE`: go back to step 5 once, since a late check may still be running; still `UNSTABLE` means `CI failed`;
-     - `BEHIND`: bring it up to date in `$WT` with `git fetch origin <baseRefName> && git merge --no-edit origin/<baseRefName>`. On a conflict, run `git merge --abort` and report `blocked: conflict with base`; never resolve one in this mode. Then run same-change(`<sha>`, `HEAD`). If it says `changed`, report `blocked: base moved` instead: the update would change what the owner approved, nothing was pushed, and the owner re-approves the updated change. If it passes, push with `git push --force-with-lease=refs/heads/<headRefName>:<sha> origin HEAD:refs/heads/<headRefName>`; when the lease is rejected, go to step 2 on the new head, and on any other failure report `blocked: push failed: <git message>`. Use `HEAD` as `<sha>` and go back to step 5;
+     - `UNSTABLE`: go back to step 6 once, since a late check may still be running; still `UNSTABLE` means `CI failed`;
+     - `BEHIND`: bring it up to date in the working copy with `git fetch origin <baseRefName> && git merge --no-edit origin/<baseRefName>`. On a conflict, run `git merge --abort` and report `blocked: conflict with base`; never resolve one in this procedure. Then run same-change(`<sha>`, `HEAD`). If it says `changed`, report `blocked: base moved` instead: the update would change what the owner approved, nothing was pushed, and the owner re-approves the updated change. If it passes, push with `git push --force-with-lease=refs/heads/<headRefName>:<sha> origin HEAD:refs/heads/<headRefName>`; when the lease is rejected, go to step 2 on the new head, and on any other failure report `blocked: push failed: <git message>`. Use `HEAD` as `<sha>` and go back to step 6;
      - `DIRTY`: `blocked: conflict with base`;
      - anything else: `blocked: <status>`.
    - Run `gh pr merge <N> --squash --match-head-commit <sha>`, plus `--admin` only in the case above. Don't use `--delete-branch`: it also deletes the local branch, which may be checked out elsewhere.
-   - Confirm `MERGED` as Phase 7 says. If it is not merged, report `blocked: merge refused: <gh message>` and stop.
+   - **A non-zero exit is not proof the merge failed — check the PR, never retry blind:** `gh pr view <N> --json state,mergedAt,mergeCommit`. `MERGED` means done. Re-running `gh pr merge` on a merged PR can push a deleted branch back and leave a stray merge commit on the base, which is published history you must not clean up alone. The same read settles a merge that times out or drops its connection. Not merged: report `blocked: merge refused: <gh message>` and stop.
    - Then delete the remote branch with `git push origin --delete <headRefName>`. If it is already gone (the repo deletes head branches on merge), that counts as done. The forge retargets any PR stacked on it.
    - Run Phase 7b, using the PR `body` read in step 1.
-7. **Report** one of:
-   - `merged`
-   - `changed since approval`
-   - `blocked-on-parent-PR #<n>`
-   - `conflict on rebase`
-   - `CI failed`
-   - `awaiting-CI`
-   - `awaiting-review`
-   - `blocked: <reason>`
+9. **Promote.** Take the merge commit (`mergeCommit.oid`) up each level after `ready` until `<level>`, in order, skipping a level whose proof holds:
+   - **The merge level:** wait for each of its workflows' runs for the merge commit: `gh run list --workflow <file> --commit <merge> --json databaseId,status,conclusion`, then `gh run watch <id> --exit-status`, through **Waiting on CI**. `merged` has nothing to wait for.
+   - **A level that follows:** its run starts by itself; find it with `gh run list --workflow <file> --event workflow_run --json databaseId,headSha,status,conclusion` and wait the same way.
+   - **A dispatched level:** `gh workflow run <file> --ref <release target> -f <input>=<merge>`, find the run that dispatch started (`gh run list --workflow <file> --event workflow_dispatch --limit 5 --json databaseId,createdAt`), and wait for it.
 
-   After any push or accepted head change, name the new head and the files same-change listed as differing, which is what the update touched. A re-approval names that head and keeps the same `--parent` arguments; step 4 recognises it as already rebased.
+   A failed run is `blocked: <level> failed: <run url>`; never re-run a deploy on your own. After each level, refresh the [Next moves](#next-moves).
+10. **Report** one of:
+    - `delivered to <level>`
+    - `changed since approval`
+    - `blocked-on-parent-PR #<n>`
+    - `conflict on rebase`
+    - `CI failed`
+    - `awaiting-CI`
+    - `awaiting-review`
+    - `blocked: <reason>`
+
+    Name each step skipped on proof, and the proof. After any push or accepted head change, name the new head and the files same-change listed as differing, which is what the update touched. A re-approval names that head and keeps the same `--parent` arguments; step 4 recognises it as already rebased.
+
+    **Every exit of this procedure is this step**: each "report … and stop" above, a hard stop and a wait included. **End the message with the [Next moves](#next-moves) block, always, as its last lines**, for example:
+
+    ```
+    Next moves — PR #7: <what it does>
+    Now: on merged
+    ```
+
+    ```
+    Next moves — PR #8: <what it does>
+    Now: blocked (do-not-merge) — once the label is removed, run deliver again for new moves
+    ```
 
 ## Phases
 
 ### 0. Anchor
 
-Before doing anything, record the starting SHA so the "not much changed since invocation" check at the end is meaningful:
+Before doing anything, record where the run starts:
 
 ```bash
 mkdir -p .context/deliver
-git rev-parse HEAD > .context/deliver/start-sha
 git rev-parse --abbrev-ref HEAD > .context/deliver/branch
 export SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner)   # Phases 6 and 6b interpolate this
 ```
@@ -191,7 +271,7 @@ echo "$BASE_REF" > .context/deliver/base
 
 **A `--base` that doesn't resolve is a stop, not a fallback.** Silently dropping back to the default branch would open a PR whose diff replays its parent's commits — reviewable-looking and wrong. If the branch exists on neither the local repo nor the remote, say so and stop.
 
-Refuse to run on the default branch, and refuse when `BASE_REF` is the branch you're on — a PR cannot target itself. If the working tree has uncommitted changes, surface them and ask the user before continuing — don't silently `git add -A`.
+Refuse to run on the default branch, and refuse when `BASE_REF` is the branch you're on — a PR cannot target itself. Under `--pr`, the branch is the PR's head in [Deliver to a level](#deliver-to-a-level)'s working copy, not the caller's checkout. If the working tree has uncommitted changes, surface them and ask the user before continuing — don't silently `git add -A`.
 
 ### 1. Scope detection
 
@@ -228,6 +308,8 @@ Run the touched packages' checks IN PARALLEL where independent. These are the sa
 
 If any check fails: fix it, re-run, then commit. Keep history clean — squash fixups into the commit they belong to where reasonable.
 
+**Skip on proof:** a green CI on a head with this patch-id, or this session's own run of these checks on one, covers them ([Proof](#proof)).
+
 Phase 3's `--gate scoped` resolves to this same set, from this same repo config — nothing is handed over, both derive it independently. So getting the repo's documented commands right is what keeps the loop from running a check the repo doesn't have, or the full suite hard rule 3 forbids.
 
 ### 2b. Confidentiality gate — only if this repo is not the sole audience
@@ -252,9 +334,9 @@ The same gate applies to anything Phase 6b posts — see that phase.
 
 **This is the review.** Not a warm-up for one: the findings that cost the most rounds live in what the hunks touch — the consumer of a changed function, the environment a config key lands in, the script whose output another script parses — and all of that is readable locally, now, for the price of some tokens instead of a ten-minute wait and a CI run per lap.
 
-**First, the skip gate.** If Phase 0 resolved `REVIEW_ROUNDS` to `0`, **do not invoke `review-loop` at all** — go straight to Phase 4, in no-merge mode for the rest of the run. Never pass `--max-rounds 0`: that skill runs at least one round per invocation by design, so `0` there means "review once, then immediately exceed the cap", which reports `budget-exhausted` and lands the run on `blocked` — the opposite of what was asked for, after doing the work that was meant to be skipped.
+**First, the skip gates.** When a review already covers this patch-id ([Proof](#proof)), don't run another: say which proof you reused. If Phase 0 resolved `REVIEW_ROUNDS` to `0`, **do not invoke `review-loop` at all** — go straight to Phase 4; the run stops at `ready` with no review proof. Never pass `--max-rounds 0`: that skill runs at least one round per invocation by design, so `0` there means "review once, then immediately exceed the cap", which reports `budget-exhausted` and lands the run on `blocked` — the opposite of what was asked for, after doing the work that was meant to be skipped.
 
-That coupling to no-merge is the whole reason `0` is allowed. It lets someone who has already reviewed the work skip a redundant pass without also handing them a way to auto-merge code no reviewer read. Everything else still runs: the checks, the confidentiality gate, the PR, the CI loop. The run stops at ready-for-review and the merge belongs to whoever did the reviewing.
+Leaving no proof behind is the whole reason `0` is allowed. It lets someone who has already reviewed the work skip a redundant pass without also handing them a way to merge code no reviewer read: a later Deliver click finds no review proof and runs the review first. Everything else still runs: the checks, the confidentiality gate, the PR, the CI loop.
 
 Otherwise invoke the **review-loop** skill, passing the base and the budget Phase 0 resolved:
 
@@ -264,7 +346,7 @@ review-loop --source local --base "$BASE_REF" --quiet-rounds 1 --max-rounds "$RE
 
 `--base` is not optional. Phase 0 promised nothing downstream re-derives a base; that skill resolves its own from repo config when nobody passes one, and on a `--base` run it would then review the parent's entire diff instead of this branch's increment — burning the whole budget on code the parent's own PR already reviewed.
 
-**If `review-loop` is not installed** — this repo supports symlinking a single skill — don't skip the review and don't improvise a rubric. Run one round of it inline: a fresh reviewer subagent on `git diff "$BASE_REF"...HEAD`, told nothing of the branch's intent, asked for whole files and callers and a severity, a concrete failure scenario and a fix per finding; verify each finding before acting on it; fix what holds; hand up the judgement calls and anything outside the diff. There will be no `state.json`, so **Phase 7's first condition reads differently on this path, and you must say which path you took.** The fallback satisfies it when its single round left nothing actionable open *and* the HEAD its reviewer read is still HEAD — the same question the field answers, asked by hand. It is one round, so it can never be `converged`; don't write that word, and don't invent a `state.json` to hold it. Report it as *inline fallback, one round* in Phase 8, so a reader can tell a looped review from a single pass.
+**If `review-loop` is not installed** — this repo supports symlinking a single skill — don't skip the review and don't improvise a rubric. Run one round of it inline: a fresh reviewer subagent on `git diff "$BASE_REF"...HEAD`, told nothing of the branch's intent, asked for whole files and callers and a severity, a concrete failure scenario and a fix per finding; verify each finding before acting on it; fix what holds; hand up the judgement calls and anything outside the diff. There will be no `state.json`, so **Phase 7's review conditions read differently on this path, and you must say which path you took.** The fallback satisfies it when its single round left nothing actionable open *and* the HEAD its reviewer read is still HEAD — the same question the field answers, asked by hand. It is one round, so it can never be `converged`; don't write that word, and don't invent a `state.json` to hold it. Report it as *inline fallback, one round* in Phase 8, so a reader can tell a looped review from a single pass.
 
 Those arguments are deliberate and differ from that skill's standalone defaults:
 
@@ -278,9 +360,9 @@ Both artifacts matter: `state.json` (the machine-readable result) and `report.md
 
 | Field | What this skill does with it |
 |---|---|
-| `sources.local.reviewed_oid` | Phase 7's merge condition — has **the fresh-context review** seen what is on the branch now? Per-source for a reason: a bot round's own fix commits must not advance the field that answers for the local loop. |
+| `sources.local.reviewed_oid` | Phase 7's `ready` condition, and the review's [proof](#proof) — has **the fresh-context review** seen what is on the branch now? Per-source for a reason: a bot round's own fix commits must not advance the field that answers for the local loop. |
 | `sources.local.exit` | `converged` is the only value that can satisfy Phase 7. `budget-exhausted` reports `blocked`. |
-| `open[]` | blockers and majors still open block the merge; handed-up decisions go in the PR body and the Phase 8 report. |
+| `open[]` | blockers and majors still open block `ready`; handed-up decisions go in the PR body and the Phase 8 report. |
 
 **The loop's handed-up findings are not yours to decide.** They are the judgement calls it refused to make alone — a design disagreement, a scope question, a deprecation policy. Carry them into the PR body (Phase 5) and the report; don't quietly implement one, and don't quietly drop it.
 
@@ -301,7 +383,7 @@ The loop already committed its own rounds, one per round — leave those as they
 
 Keep the loop's run directory out of the commits. If the repo tracks `paths.runs`, exclude it explicitly; never `git add -A`.
 
-If the branch isn't pushed yet, push with `-u`. If it is, just push.
+If the branch isn't pushed yet, push with `-u`. If it is, just push; when the PR's head already equals HEAD, there is nothing to push.
 
 ### 5. PR open or update
 
@@ -322,7 +404,7 @@ Everything in that section is published text and passes the Phase 2b gate first:
 
 Save the PR number to `.context/deliver/pr-number`.
 
-**An existing PR's base is not yours to change.** If its `baseRefName` differs from `BASE_REF` — a stack re-run after the parent landed and the forge retargeted the child, or a `--base` that disagrees with what is on record — report the mismatch and continue against the base the PR already has. Retargeting silently changes what every approval and every review comment on that PR applied to; only a human may decide that. (Merge-only mode's rebase-and-prove is the one exception: the owner's approval covers that retarget.)
+**An existing PR's base is not yours to change.** If its `baseRefName` differs from `BASE_REF` — a stack re-run after the parent landed and the forge retargeted the child, or a `--base` that disagrees with what is on record — report the mismatch and continue against the base the PR already has. Retargeting silently changes what every approval and every review comment on that PR applied to; only a human may decide that. (Deliver to a level's rebase-and-prove is the one exception: the owner's approval covers that retarget.)
 
 ### 5b. Tracker — the work is now up for review
 
@@ -389,7 +471,7 @@ gh api "repos/$SLUG/pulls/<N>/comments" --paginate
 
 Someone who took the time to comment gets an answer, and an unresolved actionable thread blocks the merge regardless of who left it or whether anyone requested them. Run each finding through the same discipline Phase 3's loop uses — verify it before touching code, fix what holds, reply on the thread, resolve it; reply with the reason and resolve when it doesn't hold; leave it open and hand it up when it's a judgement call. This runs on every invocation, including the ones where the rest of this phase is skipped.
 
-**If `review-loop` is not installed** — the case Phase 3 handles — neither part of this phase's loop is available. The *always* branch above still runs; do it by hand, it is only the two reads plus the reply-and-resolve discipline. Skip the bot round and record it as not run; Phase 7 treats a missing on-record review as non-blocking. At Phase 7's `REVIEW_REQUIRED` branch, request the human directly: take the login from the `reviewers` knob, or the most frequent reviewer of recent merged PRs excluding the author, then `gh pr edit <N> --add-reviewer`.
+**If `review-loop` is not installed** — the case Phase 3 handles — neither part of this phase's loop is available. The *always* branch above still runs; do it by hand, it is only the two reads plus the reply-and-resolve discipline. Skip the bot round and record it as not run; Phase 7 treats a missing on-record review as non-blocking. At Deliver to a level's review request (step 8), request the human directly: take the login from the `reviewers` knob, or the most frequent reviewer of recent merged PRs excluding the author, then `gh pr edit <N> --add-reviewer`.
 
 **Conditionally: put a bot's review on the record.** Run this when the `## Skill profile` sets **`reviewer`**, or when the run carries `--bot-review`. Skip it when the profile sets nothing, or the run carries `--no-bot-review`. Skipping is the common case and is not a gap: Phase 3's review is recorded in the PR body, and Phase 7 requires it to have covered HEAD.
 
@@ -408,26 +490,18 @@ Two things belong to this skill, not that one:
 - **The confidentiality gate applies to every reply *and every commit* posted here** — by the loop or by you. A thread reply is published text on a possibly-public PR, and the `bot` source pushes its own fix commits for up to five rounds. If the Phase 2b gate fired, re-run its `$TERMS` scan over what this phase added before it goes out, for the reason Phase 4 gives. (Only if it fired — `TERMS` is set inside that branch, and an unset one makes `grep -inE "$TERMS"` match every line of the diff.)
 - **A bot that never answers is not a blocker on its own.** `sources.bot.exit: awaiting-review` means the *record* is missing, not that the change is unreviewed — Phase 3's review still stands, and Phase 7's conditions decide what that's worth.
 
-### 7. Auto-merge decision
+### 7. Ready — and the Next moves
 
-In no-merge mode the *merge* is already decided against — the condition is false by definition, and Phase 7b never runs. **The assessment still happens.** `--no-merge` withholds the merge, not the truth about the PR: evaluate the conditions below anyway and report what they say — `ready-for-review` only when they all hold bar the merge itself, otherwise `awaiting-CI` or `blocked`, naming what blocks. Reporting ready-for-review unconditionally is how an exhausted review budget with open findings, or a red pipeline, reaches a human as "done".
+This phase never merges. It decides whether the PR is `ready` and hands the decision of how far to deliver it to the owner, as the [Next moves](#next-moves). A merge happens only on their click, through [Deliver to a level](#deliver-to-a-level). **The assessment is the truth about the PR:** report `ready-for-review` only when every condition below holds, otherwise `awaiting-CI` or `blocked`, naming what blocks. Reporting ready-for-review unconditionally is how an exhausted review budget with open findings, or a red pipeline, reaches a human as "done".
 
-If not much has changed since the skill started, just merge. "Not much" means the work since Phase 0's `start-sha` is mostly review fixups, not new functionality.
+`ready` condition (ALL must hold):
 
-```bash
-START=$(cat .context/deliver/start-sha)
-git diff --shortstat "$START"...HEAD     # lines changed since invocation
-git log --oneline "$START"..HEAD          # commits since invocation
-```
+- **A review ran at all.** `--review-rounds 0` skipped Phase 3, so this condition fails by construction. **Keep evaluating the rest**: an unresolved thread, a red pipeline or an open parent PR still decide whether this reports `blocked`, `awaiting-CI` or `blocked-on-parent-PR`, and the report must name the skipped review either way. Nothing substitutes for it: green CI is not a review, and neither is the author's word that they read it themselves. A click on such a PR runs the review first. AND
+- **The review covers what is on the branch now.** `sources.local.exit` is `converged` — that is the review this skill always runs, so it is the one that must have finished, not merely "some source did". And `sources.local.reviewed_oid` equals HEAD, or has HEAD's patch-id (a rebase that left the diff alone), or every commit since it is one this run made that `review-loop`'s equivalence rule covers: a fix made in response to a finding, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Inside a run you know which commits are which; a re-invocation does not, so commits after it that this run didn't make are unreviewed code and report `blocked`.
 
-Merge condition (ALL must hold):
-
-- **A review ran at all.** `--review-rounds 0` skipped Phase 3, so this condition fails by construction — the merge cannot happen. **Keep evaluating the rest**, exactly as no-merge mode requires: an unresolved thread, a red pipeline or an open parent PR still decide whether this reports `blocked`, `awaiting-CI` or `blocked-on-parent-PR` rather than `ready-for-review`, and the report must name the skipped review either way. Nothing substitutes for it: green CI is not a review, and neither is the author's word that they read it themselves. AND
-- **The review covers what is on the branch now.** `sources.local.exit` is `converged` — that is the review this skill always runs, so it is the one that must have finished, not merely "some source did". And `sources.local.reviewed_oid` equals HEAD, or every commit since it is one this run made that `review-loop`'s equivalence rule covers: a fix made in response to a finding, or a CI fix that changes no shipped behaviour (a lint autofix, a snapshot update, a workflow tweak). Inside a run you know which commits are which; a re-invocation does not, so commits after it that this run didn't make are unreviewed code and report `blocked`.
-
-  `budget-exhausted` on **`sources.local`** reports `blocked` — that is the review this skill always runs, and its cap ending without convergence never lowers the merge bar. On `bot` it is reported, not blocking: the loop stopped asking a bot, which says nothing about the change that Phase 3's review and the open-threads condition below don't already answer. `awaiting-review` never blocks on its own either (Phase 6b says why). Judge the change by what is open, not by which source ran out of patience. AND
+  `budget-exhausted` on **`sources.local`** reports `blocked` — that is the review this skill always runs, and its cap ending without convergence never lowers the bar. On `bot` it is reported, not blocking: the loop stopped asking a bot, which says nothing about the change that Phase 3's review and the open-threads condition below don't already answer. `awaiting-review` never blocks on its own either (Phase 6b says why). Judge the change by what is open, not by which source ran out of patience. AND
 - **No blocker or major sits open in `state.json`'s `open[]`**, and no actionable review thread on the PR is unresolved — whoever left it. AND
-- **Nothing is stacked on top of this PR's base** — that is the precise question, and "the base is the default branch" only approximates it: plenty of repos ship through a release or integration branch, and such a repo could never auto-merge under that rule.
+- **Nothing is stacked on top of this PR's base** — that is the precise question, and "the base is the default branch" only approximates it: plenty of repos ship through a release or integration branch, and such a repo could never deliver under that rule.
 
   ```bash
   BASE=$(gh pr view <N> --json baseRefName --jq .baseRefName)
@@ -436,11 +510,10 @@ Merge condition (ALL must hold):
   [ "$BASE" = "$DEFAULT" ] || gh pr list --state open --head "$BASE" --json number,url
   ```
 
-  The short-circuit is load-bearing, not an optimisation: `--head` matches on branch *name* and includes cross-repository PRs, so one open fork PR whose head branch is called `main` would otherwise mark **every** PR in the repo as stacked and disable auto-merge outright.
+  The short-circuit is load-bearing, not an optimisation: `--head` matches on branch *name* and includes cross-repository PRs, so one open fork PR whose head branch is called `main` would otherwise mark **every** PR in the repo as stacked.
 
-  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Stop and tell the user to land the parent first. Never retarget the base yourself. (Merge-only mode's rebase-and-prove is the one exception: the owner's approval covers that retarget.) On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up. Report it as `blocked-on-parent-PR` with the parent's number — a healthy stack waiting its turn, not a failure. AND
-- ≤ ~100 lines changed since `start-sha`, AND
-- No new files outside what was already touched at `start-sha`, AND
+  A hit means the base is itself an open PR waiting to land. Merging into it folds this work into that PR, enlarging a diff someone is mid-review on, and ships nothing. Never retarget the base yourself. (Deliver to a level's rebase-and-prove is the one exception: the owner's approval covers that retarget.) On a `--base` run this hit is the designed outcome, not an accident: a stack merges bottom-up. Report it as `blocked-on-parent-PR` with the parent's number — a healthy stack waiting its turn, not a failure — and still list the moves: they carry `--parent`, and a click waits for the parent to land. AND
+- **QA evidence is on the head** when the PR carries `needs-qa` ([Proof](#proof)). This skill doesn't run QA; without the evidence, report `blocked: needs QA evidence`. AND
 - All CI checks on the PR are green (`gh pr checks <N>` — wait for them as **Waiting on CI** says, and resolve any `[FAIL]` against the head commit's check-runs per Phase 6 before calling it red), AND
 - **The remote carries what you reviewed and fixed:**
 
@@ -448,35 +521,9 @@ Merge condition (ALL must hold):
   [ "$(git rev-parse HEAD)" = "$(gh pr view <N> --json headRefOid --jq .headRefOid)" ]
   ```
 
-  A squash merge ships the branch GitHub holds, and `--delete-branch` then deletes the local one. An unpushed fix is not merged, it is destroyed — and because CI and the reviewer both read the remote, every other condition above would have gone green on the code *without* it. Push, let CI settle, then re-evaluate.
+  A squash merge ships the branch GitHub holds. An unpushed fix is not delivered, it is lost — and because CI and the reviewer both read the remote, every other condition above would have gone green on the code *without* it. Push, let CI settle, then re-evaluate.
 
-**A forge that requires an approving review is a stop, not a condition to work around.**
-
-```bash
-gh pr view <N> --json mergeStateStatus,reviewDecision
-```
-
-`reviewDecision: REVIEW_REQUIRED` means branch protection wants a human's approval, and nothing this skill does locally can produce one. Request the reviewers — `review-loop --source human --pr <N> --base "$BASE_REF" --gate none --no-fix`, which uses the `reviewers` profile knob or derives a candidate — and report `awaiting-review`.
-
-`--no-fix` is what makes `--gate none` safe here, and the pair has to travel together. This phase runs *after* CI has been driven green and after the head check above; a source that fixed and pushed from here would leave the PR's newest commit ungated, unreviewed and unwatched, under a report calling it ready. There is nothing to fix in any case — Phase 6b already answered every thread on the PR. This call requests a person and does nothing else. Don't wait on them: a human review arrives on human time. This is the only place this skill requests a person.
-
-If the condition holds → merge:
-
-```bash
-gh pr merge <N> --squash --delete-branch        # add --admin only if ownerCanSelfMerge
-```
-
-Use `--admin` **only** when the `## Skill profile` says `ownerCanSelfMerge: true` (the user owns the repo and doesn't need peer approval). Otherwise merge normally and let required reviews apply.
-
-**A non-zero exit is not proof the merge failed — check the PR, never retry blind.** `--delete-branch` also deletes the *local* branch, and that step fails when another worktree has the base checked out (`fatal: 'main' is already used by worktree at …`), long after the merge itself succeeded server-side:
-
-```bash
-gh pr view <N> --json state,mergedAt,mergeCommit
-```
-
-`MERGED` means done — finish Phase 7b and report it. Re-running `gh pr merge` on a merged PR instead pushes the deleted branch back and can leave a stray merge commit on the base, which is published history you must not clean up alone. The same read settles a merge that times out or drops its connection.
-
-If the condition doesn't hold → don't merge. Surface the state to the user and stop.
+Then read the [levels](#levels) for this PR and write the [Next moves](#next-moves): with moves when the PR is `ready` (or only waits on its parent), with what blocks when it is not. In a repo that delivers through [its own skills](#project-specifics--read-these-first), list no moves and name that pipeline instead.
 
 ### 7b. Tracker — close the task
 
@@ -488,13 +535,13 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 8. Report
 
-Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); merge status (merged / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`, or "no local review ran (`--review-rounds 0`)" when it was skipped; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
+Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); status (ready-for-review / delivered to `<level>` / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the levels read** and where each came from; each step skipped on proof, with the proof it reused; and, **last, the Next moves block** — always present, with `Now:` even when there are no moves; **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`, or "no local review ran (`--review-rounds 0`)" when it was skipped; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
 
 The handed-up findings are the part a reader most needs and most easily loses. List them as decisions, not as a summary of a summary.
 
 ## Waiting on CI
 
-Every CI wait in this skill goes through here: Phase 6, Phase 7's green check, and merge-only step 5. A wait costs nothing while it blocks. Each *wake* does cost, because a wake re-reads the whole conversation. A delivery session often carries a few hundred thousand tokens, so a wait that wakes the agent every minute can cost more than the CI run it watches. One wake when CI settles is the goal.
+Every CI wait in this skill goes through here: Phase 6, Phase 7's green check, and Deliver to a level's steps 6 and 9 (a deploy run is waited on the same way). A wait costs nothing while it blocks. Each *wake* does cost, because a wake re-reads the whole conversation. A delivery session often carries a few hundred thousand tokens, so a wait that wakes the agent every minute can cost more than the CI run it watches. One wake when CI settles is the goal.
 
 1. **Hand the wait to a subagent when the host has them.** Start one in the foreground on the host's cheapest model (in Claude Code: `model: "haiku"`), with this brief and nothing else:
 
@@ -510,10 +557,13 @@ Every CI wait in this skill goes through here: Phase 6, Phase 7's green check, a
 2. **Never push to the default branch.** This skill operates on a feature branch only.
 3. **Never run a full test suite locally** — not full e2e, not full unit/integration. Targeted runs only; CI owns full suites. This is why Phase 3 passes `--gate scoped`.
 4. **Never merge without CI green.** Even with `--admin`, wait for `gh pr checks` to be green. Bypassing required reviews is one thing; bypassing failing CI is not.
-5. **Never merge on a review that didn't cover HEAD.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `sources.local.reviewed_oid` is the one that counts — the fresh-context review's own coverage, not the newest HEAD some source happened to look at. The one exception is merge-only mode, run on the owner's own instruction naming the PR and SHA, where that approval, or a later head carrying the same change (merge-only's same-change check), stands in for the review.
+5. **Never merge on a review that didn't cover this change.** "A review happened" and "a review of this code happened" are different facts, and only the second may gate a merge. `sources.local.reviewed_oid` is the one that counts — the fresh-context review's own coverage, not the newest HEAD some source happened to look at — at HEAD or at a head with the same patch-id. The owner's click never stands in for the review: with no proof of one, the review runs.
 6. **Never publish a client's non-public details** into a public repo or one owned by anyone but that client — not in the diff, the commit messages, the PR body, or a review reply. See the Phase 2b gate. It's the one failure here a later commit can't undo.
 7. **Don't expand scope under cover of review feedback.** If a finding asks for a refactor beyond the PR's purpose, it comes back handed up — carry it to the user, don't build it.
 8. **Re-invoke `review-loop` only for a reason a phase names** — Phase 6's behaviour-changing CI fix is the one. Never re-invoke a source that came back `budget-exhausted` hoping for a different answer: that count resumes by design, and past the cap the answer is a human. A source that *converged* gets its budget back, because what brings you here is new commits and they deserve the same scrutiny the first pass got. The cap never relaxes Phase 7's conditions either way.
 9. **A verdict header is not a finding; a folded one is.** Read the review body's suppressed comments alongside the inline ones, ignore the colour, verify before fixing, and never re-request a bot to turn 🔵 into 🟢. This applies whenever a PR carries a review — including the common case where a repo's bot reviews on open and nobody requested it.
 10. **Follow the repo's dev-server/port convention** when you start a service for a local test. Don't auto-launch a whole-stack dev script.
 11. **Never move a tracker task that belongs to someone else**, and never move one to *done* on anything but a successful merge of a PR that says it closes it. A wrong status is worse than a stale one — it's read as a fact by people who weren't in this session.
+12. **Never merge or promote without the owner's click** naming the PR and the level, in this session. Without a click, stop at `ready`; a small or green change is no exception.
+13. **A hard stop is never overridden** — `do-not-merge`, `blocked`, `qa-failed`, a `CHANGES_REQUESTED` review by anyone but the clicker, an unresolved human thread. Report it and ask again once it clears.
+14. **Never deliver past a repo's own delivery skills.** Where the repo routes PRs through its own pipeline, the merge and promotion are that pipeline's.
