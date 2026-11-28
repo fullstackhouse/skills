@@ -90,7 +90,7 @@ A missing proof means the step runs; never skip on a guess. A skip never weakens
 
 ## Next moves
 
-The owner makes one decision per change: how far to deliver it. deliver hands it over as a **Next moves** block at the end of its report, refreshed on every run. It decides what the moves are; how they are shown is the host's business. A host that turns choices into buttons (Paseo's asks plugin, for one) makes one button per move and owns the rest: subscribing to the PR, marking it waiting, closing it once it is done. In a plain chat the block is text the owner can copy. Don't drive a host's tool from here; write the block.
+The owner makes one decision per change: how far to deliver it. deliver hands it over as a **Next moves** block. **Every run's final message ends with it**, including a run that stops at a hard stop, waits on CI or a review, or has reached the top level: then the block has `Now:` and no moves. It decides what the moves are; how they are shown is the host's business. A host that turns choices into buttons (Paseo's asks plugin, for one) makes one button per move and owns the rest: subscribing to the PR, marking it waiting, closing it once it is done. In a plain chat the block is text the owner can copy. Don't drive a host's tool from here; write the block.
 
 ```
 Next moves — PR #<N>: <one plain line on what it does>
@@ -108,6 +108,7 @@ Proof: review <…>; CI <…>; QA <…>
   ```
   `read` or `triage` gets no moves; say why. `write` and `maintain` get every level; on a `REVIEW_REQUIRED` PR their click requests a review and goes on once it is approved. `admin` gets every level, and their click merges past a missing approval (step 8). A dispatched level whose environment has required reviewers that don't include the clicker (`gh api repos/$SLUG/environments/<env> --jq .protection_rules`) caps the moves below it.
 - **Not ready:** no moves, except for a PR that only waits on its parent PR (its move waits for the parent). `Now:` says what blocks.
+- **Blocked:** `Now: blocked (<reason>)` and what clears it, in the owner's terms. Don't ask the owner to do what a move would do (a chosen move is already the QA sign-off, so never ask them to add `qa-approved`).
 - **Waiting:** while carrying out a move, `Now:` says what it waits on (`CI on #<N>`, `staging deploy`) and the moves are empty. When the owner's move is next, list the remaining ones. At the top level: `Now: on <level>`, no moves.
 
 ## Deliver to a level
@@ -520,7 +521,7 @@ Acceptance criteria the merge can't prove (something observable only in a deploy
 
 ### 8. Report
 
-Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); status (ready-for-review / delivered to `<level>` / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the levels read** and where each came from; each step skipped on proof, with the proof it reused; the Next moves block, last, or why there are no moves; **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`, or "no local review ran (`--review-rounds 0`)" when it was skipped; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
+Final message to the user must include: PR URL; the base it targets whenever that isn't the default branch (name the parent PR it stacks on); status (ready-for-review / delivered to `<level>` / awaiting-CI / awaiting-review / blocked-on-parent-PR / blocked); **the levels read** and where each came from; each step skipped on proof, with the proof it reused; and, **last, the Next moves block** — always present, with `Now:` even when there are no moves; **the review loop's result** — rubric, rounds, fixed, refuted, and its `exit`, or "no local review ran (`--review-rounds 0`)" when it was skipped; what it handed up, in full, since those are decisions waiting on the user; whether Phase 6b ran and what came back; the tracker task and the state you left it in (or why you didn't move it); and any thread you left unresolved, with why.
 
 The handed-up findings are the part a reader most needs and most easily loses. List them as decisions, not as a summary of a summary.
 
